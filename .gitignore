@@ -17,6 +17,8 @@ __pycache__/
 eml_trs_bundle_*.txt
 test_gguf
 test_gguf2
+*.gguf
+models/
 
 # OS
 .DS_Store
