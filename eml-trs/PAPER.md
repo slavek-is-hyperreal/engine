@@ -122,14 +122,27 @@ feed-forward network ($W_{\text{gate}}, W_{\text{up}}, W_{\text{down}}$).
 
 ### 3.1 Composition Rule
 
-**Lemma 1.** For an operation $F$ with binary overhead $C_F$ and subexpressions
-$A$, $B$ of sizes $|A|$, $|B|$:
+**Lemma 1.** For an operation $F$ composed from $\operatorname{eml}$ nodes,
+with *structural overhead* $C_F$ (the number of EML nodes added beyond the
+sizes of the two subexpressions $A$, $B$):
 
-$$|F(A, B)| = C_F + |A| + |B|$$
+$$|F(A, B)|_{\text{eml}} = C_F + |A|_{\text{eml}} + |B|_{\text{eml}}$$
 
-The overhead values derived from Theorem 1 are:
-$C_{\text{add}} = 17$, $C_{\text{mul}} = 15$, $C_{\text{sub}} = 9$,
-$C_{\text{div}} = 15$, $C_{\ln} = 6$, $C_{\exp} = 2$.
+The structural overheads derived from Theorem 1 are:
+
+| Operation | Total nodes | Overhead $C_F$ |
+|:----------|:-----------:|:--------------:|
+| $\exp(x)$ | 3 | 2 (= 3 − 1 leaf) |
+| $\ln(x)$  | 7 | 6 (= 7 − 1 leaf) |
+| $x - y$   | 11 | 9 (= 11 − 2 leaves) |
+| $x \times y$ | 17 | 15 (= 17 − 2 leaves) |
+| $x + y$   | 19 | 17 (= 19 − 2 leaves) |
+
+*Note:* The total node counts in Theorem 1 include leaf nodes (variables
+and the constant $1$). The overhead $C_F$ counts only the internal
+$\operatorname{eml}$ nodes added by the operation itself, excluding the
+two subexpression roots. Both conventions appear in the literature;
+we use total node count for cost comparisons and overhead for composition.
 
 ### 3.2 Dot Product
 
@@ -170,9 +183,10 @@ cost with zero mathematical accuracy loss.
 
 ### 4.2 Constant Folding of Weights
 
-**Theorem 3** (Weight Constant Folding). When the weight $W$ is constant
-during inference, the multiplication $x \cdot W$ can be represented as a
-5-node EML structure (in terms of internal nodes):
+**Theorem 3** (Weight Constant Folding). When the weight $W \neq 0$ is
+constant during inference and the activation satisfies $x > 0$, the
+multiplication $x \cdot W$ can be represented as a 5-node EML structure
+(internal nodes only):
 
 $$x \cdot W = \operatorname{eml}\!\left(\operatorname{eml}\!\left(\ln(\ln(x)),\, \tfrac{1}{W}\right),\, 1\right)$$
 
@@ -182,6 +196,12 @@ where $\tfrac{1}{W}$ is a precomputed constant leaf.
 $= \exp(\ln(\ln(x))) - \ln(\tfrac{1}{W})$
 $= \ln(x) + \ln(W)$.
 Then $\exp(\ln(x) + \ln(W)) = x \cdot W$. $\square$
+
+*Scope.* The constraint $x > 0$ is required for $\ln(x)$ to be defined.
+In practice, activations after ReLU or SiLU satisfy this. For general
+activations (which may be negative), the ALU backend handles multiplication
+directly without the EML form. Pre-negated weights in ASIS (Section 4.1)
+ensure $\tilde{w}_k > 0$ for application of this theorem.
 
 **Corollary 2.** Combined ASIS and constant folding gives:
 
@@ -236,7 +256,11 @@ multiplication:
 
 $$\operatorname{SiLU}(\text{gate}) \cdot \text{up} = \frac{\text{gate} \cdot \text{up}}{1 + \exp(-\text{gate})} = \operatorname{eml}(\ln(\text{gate} \cdot \text{up}),\; 1 + \exp(-\text{gate}))$$
 
-reducing 68 nodes to 32 nodes per dimension.
+reducing 68 nodes to 32 nodes per dimension. *Implementation note:*
+this fusion requires $\operatorname{neg\_node}$ (the EML form of $-x$),
+which depends on an exhaustive-search result from Odrzywołek (2026) not
+yet incorporated into `eml-trs`. The algebraic form above is correct;
+the implementation is marked as pending in the current release.
 
 **Fusion 5** (Residual Connection). When the previous operation maintains
 its output in log-domain within the DAG, residual addition becomes a single
