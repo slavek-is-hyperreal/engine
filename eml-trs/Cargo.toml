@@ -1,0 +1,60 @@
+[package]
+name = "eml-trs"
+version = "0.1.0"
+edition = "2021"
+description = "EML Term Rewriting System for neural network compression"
+authors = ["Sławek Majcher"]
+
+
+[dependencies]
+# brak zewnętrznych zależności w core — pure Rust
+wgpu = "0.20"
+bytemuck = { version = "1.0", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+
+[dev-dependencies]
+# dla testów numerycznych
+
+[features]
+default = []
+gguf = []
+
+[[bin]]
+name = "tinyllama_costs"
+path = "benches/tinyllama_ops.rs"
+[[bin]]
+name = "trs_bench"
+path = "benches/trs_performance.rs"
+[[bin]]
+name = "verify_output"
+path = "benches/verify_output.rs"
+[[bin]]
+name = "real_tinyllama"
+path = "benches/real_tinyllama.rs"
+required-features = ["gguf"]
+
+[[bench]]
+name = "tinyllama_ops"
+path = "benches/tinyllama_ops.rs"
+harness = false
+
+[[bench]]
+name = "verify_output"
+path = "benches/verify_output.rs"
+harness = false
+
+[[bench]]
+name = "trs_performance"
+path = "benches/trs_performance.rs"
+harness = false
+
+[[bench]]
+name = "vulkan_benchmark"
+path = "benches/vulkan_benchmark.rs"
+harness = false
+
+[profile.release]
+opt-level = 3
+[profile.dev]
+opt-level = 1

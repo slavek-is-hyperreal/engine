@@ -1,0 +1,22 @@
+/plan.md
+
+# Rust
+target/
+**/*.rs.bk
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# IDEs
+.idea/
+.vscode/
+
+# Project specific
+eml_trs_bundle_*.txt
+test_gguf
+test_gguf2
+
+# OS
+.DS_Store

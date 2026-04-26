@@ -1,0 +1,7 @@
+operation,variant,cost_nodes,reduction_pct
+dot_product_K4096,naive,147437,0.0
+dot_product_K4096,asis,114677,22.22
+dot_product_K4096,asis_cf,57335,61.11
+softmax_n2048,naive_dag,71663,0.0
+softmax_n2048,log_softmax_dag,57327,20.00
+attention_1head,total,19391936512,0.0

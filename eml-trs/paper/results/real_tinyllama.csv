@@ -1,0 +1,9 @@
+metric,value
+sample_k,16
+sample_naive,557
+sample_after_cf,203
+sample_after_trs,199
+sample_reduction_pct,64.27
+layer_naive,13102000000000
+layer_optimized,4838000000000
+layer_reduction_pct,63.1
