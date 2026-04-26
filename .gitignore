@@ -19,6 +19,7 @@ test_gguf
 test_gguf2
 *.gguf
 models/
+research/
 
 # OS
 .DS_Store

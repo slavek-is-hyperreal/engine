@@ -1,15 +1,15 @@
 // src/cost_model.rs
 //
-// KONWENCJA: eml_count() = liczba węzłów wewnętrznych Eml(l,r)
-//            node_count() = eml_count() + liczba liści
-// Koszty z exhaustive search (paper Odrzywołka) = node_count()
-// Koszty w testach tego projektu = eml_count() (tylko wewnętrzne)
+// CONVENTION: eml_count() = number of internal Eml(l,r) nodes
+//             node_count() = eml_count() + number of leaves
+// Costs from exhaustive search (Odrzywołek paper) = node_count()
+// Costs in this project's tests = eml_count() (internal only)
 
-// Brak importów z ast.rs, ponieważ CostModel operuje tylko na liczbach (usize)
+// No imports from ast.rs, because CostModel operates only on numbers (usize)
 
-/// Koszty bazowe operacji z exhaustive search (Odrzywołek 2026)
-/// Koszt = całkowita liczba węzłów drzewa (wewnętrzne + liście)
-/// dla argumentów będących prostymi zmiennymi (koszt liścia = 1)
+/// Base costs of operations from exhaustive search (Odrzywołek 2026)
+/// Cost = total number of tree nodes (internal + leaves)
+/// for arguments being simple variables (leaf cost = 1)
 pub struct CostModel;
 
 impl CostModel {
@@ -21,8 +21,8 @@ impl CostModel {
     pub fn div_cost() -> usize { 17 }
     pub fn add_cost() -> usize { 19 }
 
-    /// Narzut operatora (overhead) = koszt - liczba argumentów
-    /// Używany do obliczania kosztu kompozycji z poddrzewami
+    /// Operator overhead = cost - number of arguments
+    /// Used to calculate the cost of composition with subtrees
     pub fn exp_overhead() -> usize { 2 }   // 3 - 1
     pub fn ln_overhead() -> usize { 6 }    // 7 - 1
     pub fn sub_overhead() -> usize { 9 }   // 11 - 2
@@ -31,7 +31,7 @@ impl CostModel {
     pub fn div_overhead() -> usize { 15 }  // 17 - 2
     pub fn add_overhead() -> usize { 17 }  // 19 - 2
 
-    /// Koszt kompozycji: op(A, B) gdzie A i B są poddrzewami
+    /// Composition cost: op(A, B) where A and B are subtrees
     pub fn compose_binary(overhead: usize, cost_a: usize, cost_b: usize) -> usize {
         overhead + cost_a + cost_b
     }
@@ -40,86 +40,86 @@ impl CostModel {
         overhead + cost_a
     }
 
-    /// Koszt iloczynu skalarnego długości K — metoda naiwna
+    /// Cost of dot product of length K — naive method
     /// C_naive(K) = 36K - 19
     pub fn dot_product_naive(k: usize) -> usize {
         36 * k - 19
     }
 
-    /// Koszt iloczynu skalarnego długości K — metoda ASIS
+    /// Cost of dot product of length K — ASIS method
     /// C_ASIS(K) = 28K - 11
-    /// Wymaga: wagi pre-negowane offline
+    /// Requires: weights pre-negated offline
     pub fn dot_product_asis(k: usize) -> usize {
         28 * k - 11
     }
 
-    /// Koszt iloczynu skalarnego — ASIS + Constant Folding wag
+    /// Cost of dot product — ASIS + Constant Folding of weights
     /// C_CF_ASIS(K) = 14K - 9
-    /// Wymaga: wagi statyczne, ln(ln(x)) prekomputowane
+    /// Requires: static weights, ln(ln(x)) precomputed
     pub fn dot_product_cf_asis(k: usize) -> usize {
         14 * k - 9
     }
 
-    /// Koszt mnożenia macierzy M×K · K×N — metoda naiwna
+    /// Cost of matrix multiplication M×K · K×N — naive method
     pub fn matmul_naive(m: usize, n: usize, k: usize) -> usize {
         m * n * Self::dot_product_naive(k)
     }
 
-    /// Koszt mnożenia macierzy — ASIS
+    /// Cost of matrix multiplication — ASIS
     pub fn matmul_asis(m: usize, n: usize, k: usize) -> usize {
         m * n * Self::dot_product_asis(k)
     }
 
-    /// Koszt mnożenia macierzy — ASIS + CF
+    /// Cost of matrix multiplication — ASIS + CF
     pub fn matmul_cf_asis(m: usize, n: usize, k: usize) -> usize {
-        // Prekomputacja Z = ln(ln(A)) kosztuje 13*m*k
-        // Reszta: m*n*(14k-9)
+        // Precomputing Z = ln(ln(A)) costs 13*m*k
+        // The rest: m*n*(14k-9)
         13 * m * k + m * n * Self::dot_product_cf_asis(k)
     }
 
-    /// Koszt Softmax dla wektora długości N — DAG (sprzętowy)
+    /// Cost of Softmax for a vector of length N — DAG (hardware)
     /// DAG_naive = 35n - 17
     pub fn softmax_dag(n: usize) -> usize {
         35 * n - 17
     }
 
-    /// Koszt Log-Softmax dla wektora długości N — DAG
+    /// Cost of Log-Softmax for a vector of length N — DAG
     /// DAG_log = 28n - 17
-    /// Log-Softmax jest NATYWNĄ operacją EML: eml(ln(x_i), S) = x_i - ln(S)
+    /// Log-Softmax is a NATIVE EML operation: eml(ln(x_i), S) = x_i - ln(S)
     pub fn log_softmax_dag(n: usize) -> usize {
         28 * n - 17
     }
 
-    /// Koszt Sigmoid(x) — optymalny
+    /// Cost of Sigmoid(x) — optimal
     pub fn sigmoid_cost() -> usize { 51 }
 
-    /// Koszt SiLU(x) — optymalny (= sigmoid!)
-    /// SiLU(x) = x/(1+exp(-x)) zamiast x*sigmoid(x)
+    /// Cost of SiLU(x) — optimal (= sigmoid!)
+    /// SiLU(x) = x/(1+exp(-x)) instead of x*sigmoid(x)
     pub fn silu_cost() -> usize { 51 }
 
-    /// Koszt RMSNorm dla wektora długości d — DAG z memoizacją R
+    /// Cost of RMSNorm for a vector of length d — DAG with memoization R
     /// Cost = 66d + 41
     pub fn rmsnorm_dag(d: usize) -> usize {
         66 * d + 41
     }
 
-    /// Koszt RoPE per para wymiarów — forma rzeczywista z Constant Folding
-    /// Weryfikacja: Gemini Deep Research (dowód algebraiczny)
-    /// 4 mnożenia przez stałe (CF: 5 węzłów każde) + odejmowanie (11) + dodawanie (19)
-    /// = 4*5 + 11 + 19 = 50 węzłów per para
+    /// Cost of RoPE per pair of dimensions — real form with Constant Folding
+    /// Verification: Gemini Deep Research (algebraic proof)
+    /// 4 multiplications by constants (CF: 5 nodes each) + subtraction (11) + addition (19)
+    /// = 4*5 + 11 + 19 = 50 nodes per pair
     pub fn rope_pair_cost_cf() -> usize { 50 }
     pub fn rope_element_cost_cf() -> usize { 25 } // 50/2 per element
 
-    // Stare — oznacz jako deprecated:
-    #[deprecated(note = "Użyj rope_element_cost_cf() = 25 węzłów (zweryfikowane)")]
+    // Old — mark as deprecated:
+    #[deprecated(note = "Use rope_element_cost_cf() = 25 nodes (verified)")]
     pub fn rope_element_cost_lower() -> usize { 68 }
-    #[deprecated(note = "Użyj rope_element_cost_cf() = 25 węzłów (zweryfikowane)")]
+    #[deprecated(note = "Use rope_element_cost_cf() = 25 nodes (verified)")]
     pub fn rope_element_cost_upper() -> usize { 53 }
-    #[deprecated(note = "Użyj rope_element_cost_cf() = 25.0")]
+    #[deprecated(note = "Use rope_element_cost_cf() = 25.0")]
     pub fn rope_avg_cost() -> f64 { 60.5 }
 
-    /// Koszt pełnego Attention dla TinyLlama (jedna głowa)
-    /// Q·K^T dominuje: 49.38%, Scores·V: 49.78%, Softmax: 0.84%
+    /// Full Attention cost for TinyLlama (one head)
+    /// Q·K^T dominates: 49.38%, Scores·V: 49.78%, Softmax: 0.84%
     pub fn attention_one_head(seq_len: usize, d_k: usize) -> usize {
         let qkt = seq_len * seq_len * Self::dot_product_naive(d_k);
         let softmax = seq_len * Self::softmax_dag(seq_len);
@@ -127,48 +127,48 @@ impl CostModel {
         qkt + softmax + sv
     }
 
-    /// Koszt jednej warstwy TinyLlama — naiwny
-    /// Wynik z Deep Research: ~13,102 miliardów węzłów
+    /// Cost of one TinyLlama layer — naive
+    /// Result from Deep Research: ~13,102 billion nodes
     pub fn tinyllama_layer_naive() -> u64 {
         13_102_000_000_000
     }
 
-    /// Koszt jednej warstwy TinyLlamy — po optymalizacji
-    /// CF + ASIS + DAG + fuzje styków
-    /// Wynik z Deep Research: ~4,838 miliardów węzłów (63% redukcja)
+    /// Cost of one TinyLlama layer — after optimization
+    /// CF + ASIS + DAG + boundary fusions
+    /// Result from Deep Research: ~4,838 billion nodes (63% reduction)
     pub fn tinyllama_layer_optimized() -> u64 {
         4_838_000_000_000
     }
 
-    /// Redukcja dla całej warstwy
+    /// Total reduction for the entire layer
     pub fn tinyllama_layer_reduction() -> f64 {
         let naive = Self::tinyllama_layer_naive() as f64;
         let opt = Self::tinyllama_layer_optimized() as f64;
         (naive - opt) / naive * 100.0
     }
 
-    /// Koszt SwiGLU po fuzji styku (gate*up przez SiLU)
-    /// Redukcja: 68 → 32 węzłów per wymiar
+    /// Cost of SwiGLU after boundary fusion (gate*up via SiLU)
+    /// Reduction: 68 → 32 nodes per dimension
     pub fn swiglu_fused_cost() -> usize { 32 }
 
-    /// Koszt residual connection gdy x w formie ln(x) w DAG
-    /// 1 węzeł EML zamiast 19
+    /// Cost of residual connection when x is in ln(x) form in DAG
+    /// 1 EML node instead of 19
     pub fn residual_fused_cost() -> usize { 1 }
 
-    /// Dolna granica złożoności attention — twierdzenie
-    /// Ω(n² · d) węzłów EML dla full attention
+    /// Lower bound of attention complexity — theorem
+    /// Ω(n² · d) EML nodes for full attention
     pub fn attention_lower_bound(n: usize, d: usize) -> u64 {
         (n * n * d) as u64
     }
 
-    /// Całkowita redukcja dla każdej operacji TinyLlamy
+    /// Total reduction for each TinyLlama operation
     pub fn tinyllama_breakdown() -> Vec<(&'static str, f64, f64, f64)> {
-        // (operacja, naiwny_B, opt_B, redukcja_%)
+        // (operation, naive_B, opt_B, reduction_%)
         vec![
             ("RMSNorm×2",        34.0,   0.02,  99.9),
-            ("Projekcje Q,K,V",  1855.3, 480.8, 74.1),
+            ("Projections Q,K,V",1855.3, 480.8, 74.1),
             // seq=2048, d_k=64, n_heads=32
-            // 25 * 64 * 2048 * 32 = 104,857,600 ≈ 0.105B węzłów
+            // 25 * 64 * 2048 * 32 = 104,857,600 ≈ 0.105B nodes
             ("RoPE",             1.7,    0.105, 93.8),
             ("Q@K^T",            306.6,  119.0, 61.2),
             ("Log-Softmax",      4.69,   0.13,  97.2),
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_dot_product_formulas() {
-        // K=1: pierwszy element tylko mnożenie
+        // K=1: first element is just multiplication
         assert_eq!(CostModel::dot_product_naive(1), 17);
         // K=2: 36*2-19=53
         assert_eq!(CostModel::dot_product_naive(2), 53);
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn test_asis_reduction() {
-        // ASIS powinien być 22.2% tańszy asymptotycznie
+        // ASIS should be 22.2% cheaper asymptotically
         let naive = CostModel::dot_product_naive(1024) as f64;
         let asis = CostModel::dot_product_asis(1024) as f64;
         let reduction = (naive - asis) / naive;
@@ -240,7 +240,7 @@ mod tests {
         let total = CostModel::attention_one_head(seq, dk);
         let softmax = seq * CostModel::softmax_dag(seq);
         let fraction = softmax as f64 / total as f64;
-        // Softmax powinien być < 1% całkowitego kosztu
+        // Softmax should be < 1% of total cost
         assert!(fraction < 0.01,
             "Softmax fraction: {:.4} (expected < 0.01)", fraction);
     }
@@ -258,7 +258,7 @@ mod tests {
 
     #[test]
     fn test_swiglu_fused_cheaper() {
-        // SwiGLU fused: 32 węzły < naiwne: ~68 węzłów
+        // SwiGLU fused: 32 nodes < naive: ~68 nodes
         assert!(CostModel::swiglu_fused_cost() < 68);
     }
 
@@ -269,7 +269,7 @@ mod tests {
 
     #[test]
     fn test_attention_lower_bound() {
-        // Dla TinyLlamy: n=2048, d=64
+        // For TinyLlama: n=2048, d=64
         let lb = CostModel::attention_lower_bound(2048, 64);
         assert_eq!(lb, 2048 * 2048 * 64); // 268,435,456
     }

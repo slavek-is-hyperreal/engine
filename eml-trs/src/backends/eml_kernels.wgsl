@@ -1,35 +1,39 @@
 // src/backends/eml_kernels.wgsl
 
-// === STAŁE MINIMAX (obliczone offline) ===
+// src/backends/eml_kernels.wgsl
+
+// === MINIMAX CONSTANTS (computed offline) ===
 const LOG2_E: f32 = 1.4426950408889634f;
 const LN_2:   f32 = 0.6931471805599453f;
 
-// Współczynniki fast_exp N=2:
+// Coefficients for fast_exp N=2:
 const EXP_A0: f32 = 1.00247605f;
 const EXP_A1: f32 = 0.65104678f;
 const EXP_A2: f32 = 0.34400111f;
 
-// Współczynniki fast_ln N=3:
+// Coefficients for fast_ln N=3:
 const LN_C1: f32 = 0.98771793f;
 const LN_C2: f32 = -0.40916155f;
 const LN_C3: f32 = 0.11513792f;
 
 fn fast_exp(x: f32) -> f32 {
-    // Ogranicz zakres żeby uniknąć overflow
+    // clamp guarantees exp_i >= 2 (for x >= -87)
+    // Do not change clamp bounds without verifying exp_i >= 1
+    // Limit range to avoid overflow
     let xc = clamp(x, -87.0f, 87.0f);
     let w = xc * LOG2_E;
     let i = floor(w);
     let f = w - i;
     // Minimax: 2^f
     let p = EXP_A0 + f * (EXP_A1 + f * EXP_A2);
-    // Skalowanie przez 2^i przez bit manipulation (ldexp)
+    // Scale by 2^i using bit manipulation (ldexp)
     let exp_i = i32(i) + 127;
     let scale = bitcast<f32>(u32(exp_i) << 23u);
     return p * scale;
 }
 
 fn fast_ln(x: f32) -> f32 {
-    if (x <= 0.0f) { return -3.4028235e+38f; } // -MAX_FLOAT jako proxy -inf
+    if (x <= 0.0f) { return -3.4028235e+38f; } // -MAX_FLOAT as proxy for -inf
     let bx = bitcast<u32>(x);
     let e = f32(i32((bx >> 23u) & 0xFFu) - 127);
     let m = bitcast<f32>((bx & 0x7FFFFFu) | 0x3F800000u);
@@ -43,36 +47,36 @@ fn eml(x: f32, y: f32) -> f32 {
     return fast_exp(x) - fast_ln(y);
 }
 
-// bf16 spakowane jako u32 (dwa bf16 w jednym u32)
+// bf16 packed as u32 (two bf16 in one u32)
 alias Bf16x2 = u32;
 
 fn decode_bf16_hi(packed: u32) -> f32 {
-    // Górne 16 bitów → f32 przez maskowanie
+    // Upper 16 bits → f32 via masking
     return bitcast<f32>(packed & 0xFFFF0000u);
 }
 
 fn decode_bf16_lo(packed: u32) -> f32 {
-    // Dolne 16 bitów → f32
+    // Lower 16 bits → f32
     return bitcast<f32>((packed << 16u) & 0xFFFF0000u);
 }
 
 fn encode_bf16(x: f32) -> u32 {
-    // f32 → bf16 przez obcięcie mantysty (truncation)
-    // Rounding: round-to-nearest-even dla lepszej dokładności
+    // f32 → bf16 via mantissa truncation
+    // Rounding: round-to-nearest-even for better accuracy
     let bits = bitcast<u32>(x);
-    let rounding = (bits >> 16u) & 1u; // bit zaokrąglenia
+    let rounding = (bits >> 16u) & 1u; // rounding bit
     return (bits + 0x7FFFu + rounding) >> 16u;
 }
 
 struct DotProductParams {
-    k: u32,          // długość wektora
-    n_heads: u32,    // liczba głów
-    seq_len: u32,    // długość sekwencji
-    pad: u32,        // wyrównanie
+    k: u32,          // vector length
+    n_heads: u32,    // number of heads
+    seq_len: u32,    // sequence length
+    pad: u32,        // padding
 };
 
 @group(0) @binding(0) var<storage, read>       input:   array<f32>;
-@group(0) @binding(1) var<storage, read>       weights: array<f32>; // pre-negowane ASIS
+@group(0) @binding(1) var<storage, read>       weights: array<f32>; // pre-negated ASIS
 @group(0) @binding(2) var<storage, read_write> output:  array<f32>;
 @group(0) @binding(3) var<uniform>             params:  DotProductParams;
 
@@ -86,17 +90,17 @@ fn dot_product_asis(
     
     if (out_idx >= params.seq_len) { return; }
     
-    // Pierwszy element: x[0] * w[0]
+    // First element: x[0] * w[0]
     let x0 = input[out_idx * k + 0u];
     let w0 = weights[out_idx * k + 0u];
-    var acc = x0 * w0;  // Pierwszy element bez ASIS
+    var acc = x0 * w0;  // First element without ASIS
     
-    // Pozostałe: odejmowanie (ASIS)
+    // The rest: subtraction (ASIS)
     for (var i = 1u; i < k; i++) {
         let xi = input[out_idx * k + i];
-        let wi = weights[out_idx * k + i]; // wi już zanegowane offline
+        let wi = weights[out_idx * k + i]; // wi already negated offline
         
-        // Zastosowanie fallback z ALU tak jak zdefiniowano - w EML można byłoby uzywać pełnego drzewa
+        // Using ALU fallback as defined - in full EML we would use the tree
         acc = acc - xi * wi;
     }
     
@@ -117,7 +121,7 @@ fn log_softmax(
     let n = arrayLength(&logits);
     let tid = lid.x;
     
-    // Krok 1: Oblicz Σ exp(x_j) przez parallel reduction
+    // Step 1: Compute Σ exp(x_j) via parallel reduction
     var local_sum = 0.0f;
     for (var i = tid; i < n; i += 64u) {
         local_sum += fast_exp(logits[i]);
@@ -125,7 +129,7 @@ fn log_softmax(
     shared_sum[tid] = local_sum;
     workgroupBarrier();
     
-    // Parallel reduction w shared memory
+    // Parallel reduction in shared memory
     for (var stride = 32u; stride > 0u; stride >>= 1u) {
         if (tid < stride) {
             shared_sum[tid] += shared_sum[tid + stride];
@@ -133,8 +137,8 @@ fn log_softmax(
         workgroupBarrier();
     }
     
-    // Krok 2: log_softmax(x_i) = x_i - ln(S) = eml(ln(x_i), S)
-    // To jest jeden węzeł EML per element
+    // Step 2: log_softmax(x_i) = x_i - ln(S) = eml(ln(x_i), S)
+    // This is one EML node per element
     let log_sum_exp = fast_ln(shared_sum[0]);
     
     for (var i = tid; i < n; i += 64u) {

@@ -2,7 +2,7 @@
 fn main() {
     #[cfg(feature = "gguf")] run();
     #[cfg(not(feature = "gguf"))]
-    eprintln!("Uruchom: cargo run --features gguf --bin real_tinyllama -- model.gguf");
+    eprintln!("Run: cargo run --features gguf --bin real_tinyllama -- model.gguf");
 }
 
 #[cfg(feature = "gguf")]
@@ -14,8 +14,8 @@ fn run() {
 
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
-        eprintln!("Użycie: real_tinyllama <model.gguf>");
-        eprintln!("Pobierz: huggingface-cli download TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF \\");
+        eprintln!("Usage: real_tinyllama <model.gguf>");
+        eprintln!("Download: huggingface-cli download TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF \\");
         eprintln!("  tinyllama-1.1b-chat-v1.0.F16.gguf --local-dir ./models");
         std::process::exit(1);
     }
@@ -23,28 +23,28 @@ fn run() {
     println!("=== TinyLlama EML Analysis ===\nModel: {}\n", args[1]);
     let t0 = Instant::now();
     let mut loader = GgufLoader::open(&args[1])
-        .unwrap_or_else(|e| { eprintln!("Błąd: {}", e); std::process::exit(1); });
+        .unwrap_or_else(|e| { eprintln!("Error: {}", e); std::process::exit(1); });
 
     let mut names = loader.tensor_names();
     names.sort();
-    println!("Tensory: {}", names.len());
-    println!("Przykłady: {:?}\n", &names[..names.len().min(5)]);
+    println!("Tensors: {}", names.len());
+    println!("Examples: {:?}\n", &names[..names.len().min(5)]);
 
     let layer = loader.load_layer(0)
-        .unwrap_or_else(|e| { eprintln!("Błąd: {}", e); std::process::exit(1); });
-    println!("Warstwa 0: {:.0}ms", t0.elapsed().as_secs_f64()*1000.0);
+        .unwrap_or_else(|e| { eprintln!("Error: {}", e); std::process::exit(1); });
+    println!("Layer 0: {:.0}ms", t0.elapsed().as_secs_f64()*1000.0);
     println!("  W_Q: {} W_gate: {}\n", layer.w_q.len(), layer.w_gate.len());
 
-    println!("=== Koszty EML ===");
+    println!("=== EML Costs ===");
     let (naive,asis,cf) = measure_costs(4096);
     println!("K=4096: naive={} asis={} ({:.1}%) cf={} ({:.1}%)",
         naive, asis, (naive-asis) as f64/naive as f64*100.0,
         cf, (naive-cf) as f64/naive as f64*100.0);
-    println!("Warstwa: naive={} opt={} red={:.1}%",
+    println!("Layer: naive={} opt={} red={:.1}%",
         CostModel::tinyllama_layer_naive(),
         CostModel::tinyllama_layer_optimized(),
         CostModel::tinyllama_layer_reduction());
-    println!("Dolna granica Ω(n²d): {}\n", CostModel::attention_lower_bound(2048,64));
+    println!("Lower bound Ω(n²d): {}\n", CostModel::attention_lower_bound(2048,64));
 
     println!("=== Offline Preprocessing ===");
     let t1 = Instant::now();
@@ -52,11 +52,11 @@ fn run() {
     let w_pre = preprocess_wq_offline(&layer.w_q, &layer.rms_att_weight, 64, hidden);
     println!("γ + 1/√dk → W_Q: {:.0}ms\n", t1.elapsed().as_secs_f64()*1000.0);
 
-    println!("=== Próbka K=16 ===");
+    println!("=== Sample K=16 ===");
     let w_s: Vec<f32> = w_pre.iter().take(16).copied().collect();
     let t2 = Instant::now();
     let r = build_and_optimize_sample(&w_s, 16);
-    println!("Czas: {:.0}ms", t2.elapsed().as_secs_f64()*1000.0);
+    println!("Time: {:.0}ms", t2.elapsed().as_secs_f64()*1000.0);
     println!("  naive={} cf={} trs={} red={:.1}% depth={}",
         r.nodes_naive, r.nodes_after_cf, r.nodes_after_trs,
         r.reduction_pct, r.sample_tree.depth());
@@ -69,7 +69,7 @@ fn run() {
         println!("  {} [{}]: min={:.4} max={:.4} mean={:.4} neg={:.0}%",
             name, w.len(), min, max, mean, neg as f64/w.len() as f64*100.0);
     }
-    println!("\n=== Statystyki Wag ===");
+    println!("\n=== Weights Statistics ===");
     stats("W_Q", &layer.w_q);
     stats("W_Q preprocessed", &w_pre);
     stats("γ RMSNorm", &layer.rms_att_weight);
@@ -86,5 +86,5 @@ fn run() {
     writeln!(f,"layer_naive,{}",CostModel::tinyllama_layer_naive()).unwrap();
     writeln!(f,"layer_optimized,{}",CostModel::tinyllama_layer_optimized()).unwrap();
     writeln!(f,"layer_reduction_pct,{:.1}",CostModel::tinyllama_layer_reduction()).unwrap();
-    println!("\nZapisano: paper/results/real_tinyllama.csv");
+    println!("\nSaved: paper/results/real_tinyllama.csv");
 }

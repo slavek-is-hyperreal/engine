@@ -1,20 +1,20 @@
 // src/asis.rs
 //
-// KONWENCJA: eml_count() = liczba węzłów wewnętrznych Eml(l,r)
-//            node_count() = eml_count() + liczba liści
-// Koszty z exhaustive search (paper Odrzywołka) = node_count()
-// Koszty w testach tego projektu = eml_count() (tylko wewnętrzne)
+// CONVENTION: eml_count() = number of internal Eml(l,r) nodes
+//             node_count() = eml_count() + number of leaves
+// Costs from exhaustive search (Odrzywołek paper) = node_count()
+// Costs in this project's tests = eml_count() (internal only)
 
 use crate::ast::*;
-// use crate::cost_model::CostModel; // Nieużywany import
+// use crate::cost_model::CostModel; // Unused import
 use std::sync::Arc;
 
-/// Buduje drzewo EML dla ASIS dot product
-/// inputs: zmienne wejściowe [x1, x2, ..., xK]
-/// weights: wagi [w1, -w2, -w3, ..., -wK] (pre-negowane przez CF)
+/// Builds EML tree for ASIS dot product
+/// inputs: input variables [x1, x2, ..., xK]
+/// weights: weights [w1, -w2, -w3, ..., -wK] (pre-negated by CF)
 ///
-/// Wynik: A₁B₁ - Ã₂B₂ - Ã₃B₃ - ...
-/// gdzie Ãₖ = -Aₖ dla k≥2 (pre-negowane offline)
+/// Result: A₁B₁ - Ã₂B₂ - Ã₃B₃ - ...
+/// where Ãₖ = -Aₖ for k≥2 (pre-negated offline)
 pub fn build_asis_dot_product(
     inputs: &[Arc<EmlNode>],
     weights: &[Arc<EmlNode>],
@@ -22,15 +22,15 @@ pub fn build_asis_dot_product(
     assert_eq!(inputs.len(), weights.len());
     assert!(!inputs.is_empty());
 
-    // Makro mnożenia: x * y = 14 węzłów (wewnętrznych)
+    // Multiplication macro: x * y = 14 nodes (internal)
     fn mul_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
         // x * y = exp(ln(x) + ln(y))
-        // ln(x) + ln(y) przez ASIS trick:
-        //   ln(x) + 1 = eml(ln(ln(x)), 1/e)   [bo exp(ln(ln(x))) - ln(1/e) = ln(x)+1]
-        //   1 - ln(y) = eml(0, y)              [bo exp(0) - ln(y) = 1 - ln(y)]
+        // ln(x) + ln(y) via ASIS trick:
+        //   ln(x) + 1 = eml(ln(ln(x)), 1/e)   [because exp(ln(ln(x))) - ln(1/e) = ln(x)+1]
+        //   1 - ln(y) = eml(0, y)              [because exp(0) - ln(y) = 1 - ln(y)]
         //   (ln(x)+1) - (1-ln(y)) = ln(x) + ln(y) ✓
-        // Koszt: eml_count() = 14 (węzły wewnętrzne)
-        // Odpowiednik node_count() ≈ 29 (wszystkie węzły z liśćmi)
+        // Cost: eml_count() = 14 (internal nodes)
+        // Equivalent to node_count() ≈ 29 (all nodes including leaves)
         
         let ln_x = ln_node(x);
         let ln_ln_x = ln_node(ln_x);
@@ -46,32 +46,32 @@ pub fn build_asis_dot_product(
         exp_node(sum_ln)
     }
 
-    // Makro odejmowania: x - y = 11 węzłów
+    // Subtraction macro: x - y = 11 nodes
     fn sub_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
         eml(ln_node(x), exp_node(y))
     }
 
-    // Krok 1: pierwszy iloczyn A₁B₁
+    // Step 1: first product A₁B₁
     let first = mul_eml(inputs[0].clone(), weights[0].clone());
 
-    // Kroki 2..K: akumulacja przez odejmowanie (ASIS)
+    // Steps 2..K: accumulation via subtraction (ASIS)
     // C = A₁B₁ - Ã₂B₂ - Ã₃B₃ - ...
     inputs[1..].iter().zip(weights[1..].iter())
         .fold(first, |acc, (x, w)| {
             let product = mul_eml(x.clone(), w.clone());
-            sub_eml(acc, product)  // odejmowanie zamiast dodawania!
+            sub_eml(acc, product)  // subtraction instead of addition!
         })
 }
 
-/// Weryfikuje że ASIS daje ten sam wynik co naiwny dot product
-/// (dla konkretnych wartości liczbowych)
+/// Verifies that ASIS yields the same result as naive dot product
+/// (for specific numerical values)
 pub fn verify_asis_correctness(
     inputs: &[f64],
     weights: &[f64],
 ) -> bool {
     use crate::constant_fold::asis_preprocess_weights;
 
-    // Naiwny: Σ(aᵢ * bᵢ)
+    // Naive: Σ(aᵢ * bᵢ)
     let naive: f64 = inputs.iter().zip(weights.iter())
         .map(|(a, b)| a * b)
         .sum();
@@ -105,13 +105,13 @@ mod tests {
 
     #[test]
     fn test_asis_tree_size() {
-        // Drzewo ASIS K=2 powinno być mniejsze niż naiwne
+        // ASIS tree K=2 should be smaller than naive
         let inputs: Vec<_> = (0..2).map(|i| var(&format!("x{}", i))).collect();
         let weights: Vec<_> = (0..2).map(|i| var(&format!("w{}", i))).collect();
         let tree = build_asis_dot_product(&inputs, &weights);
         let asis_cost = tree.eml_count();
-        // ASIS K=2 z mul_eml=14 węzłów: A1*B1(14) - A2*B2(14)
-        // sub = 11, razem = 14 + 14 + 11 = 39. (Naiwne ~ 53)
+        // ASIS K=2 with mul_eml=14 nodes: A1*B1(14) - A2*B2(14)
+        // sub = 11, total = 14 + 14 + 11 = 39. (Naive ~ 53)
         assert!(asis_cost <= 53, "ASIS cost {} > naive 53", asis_cost);
     }
 
@@ -122,7 +122,7 @@ mod tests {
         
         let x = var("x");
         let y = var("y");
-        // Wykorzystujemy tę samą funkcję co wewnątrz `build_asis_dot_product`, ale musimy ją zdefiniować lokalnie:
+        // Use the same function as inside `build_asis_dot_product`, but define it locally:
         fn mul_eml_local(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
             let ln_x = ln_node(x);
             let ln_ln_x = ln_node(ln_x);
@@ -156,14 +156,14 @@ mod tests {
         }
         let tree = mul_eml_local(var("x"), var("y"));
         assert!(tree.eml_count() <= 17, "mul_eml has {} nodes, expected <= 17", tree.eml_count());
-        assert_eq!(tree.eml_count(), 14, "Zoptymalizowano do 14!");
+        assert_eq!(tree.eml_count(), 14, "Optimized to 14!");
     }
 
     #[test]
     fn test_mul_eml_positive_only() {
-        // UWAGA: mul_eml działa tylko dla x,y > 0
-        // Dla ujemnych wartości użyj asis_preprocess_weights (pre-negacja offline)
-        // lub klasycznego mnożenia w backendzie ALU
+        // NOTE: mul_eml works only for x,y > 0
+        // For negative values use asis_preprocess_weights (offline pre-negation)
+        // or classical multiplication in ALU backend
         use crate::constant_fold::try_evaluate;
         use crate::constant_fold::ConstantMap;
         
@@ -183,8 +183,8 @@ mod tests {
         consts.insert("x".to_string(), -2.0);
         consts.insert("y".to_string(), 3.0);
         let tree = mul_eml_local(var("x"), var("y"));
-        // Oczekujemy None bo ln(-2.0) jest NaN
+        // We expect None because ln(-2.0) is NaN
         assert!(try_evaluate(&tree, &consts).is_none(),
-            "mul_eml nie działa dla ujemnych wartości — użyj ALU backend");
+            "mul_eml does not work for negative values — use ALU backend");
     }
 }

@@ -75,7 +75,9 @@ impl GgufLoader {
         if version < 2 || version > 3 { return Err(GgufError::UnsupportedVersion(version)); }
         let n_tensors = read_u64(&mut file)?;
         let n_kv = read_u64(&mut file)?;
-        for _ in 0..n_kv { skip_kv(&mut file)?; }
+        for _ in 0..n_kv { 
+            skip_kv(&mut file)?; 
+        }
         let mut tensors = HashMap::new();
         for _ in 0..n_tensors {
             let name = read_str(&mut file)?;
@@ -147,19 +149,21 @@ fn read_str(f: &mut File) -> Result<String, GgufError> {
     String::from_utf8(buf).map_err(|_| GgufError::InvalidMagic)
 }
 fn skip_kv(f: &mut File) -> Result<(), GgufError> {
-    let l = read_u64(f)? as i64; f.seek(SeekFrom::Current(l))?;
-    let t = read_u32(f)?; skip_val(f, t)
+    let l = read_u64(f)? as i64; 
+    f.seek(SeekFrom::Current(l))?;
+    let t = read_u32(f)?; 
+    skip_val(f, t)
 }
 fn skip_val(f: &mut File, t: u32) -> Result<(), GgufError> {
     match t {
-        0|1|7 => { f.seek(SeekFrom::Current(1))?; }
-        2|3   => { f.seek(SeekFrom::Current(2))?; }
-        4|5|6 => { f.seek(SeekFrom::Current(4))?; }
-        10|11|12 => { f.seek(SeekFrom::Current(8))?; }
-        8 => { let l=read_u64(f)? as i64; f.seek(SeekFrom::Current(l))?; }
+        0|1|7 => { f.seek(SeekFrom::Current(1))?; }   // u8, i8, bool
+        2|3   => { f.seek(SeekFrom::Current(2))?; }   // u16, i16
+        4|5|6 => { f.seek(SeekFrom::Current(4))?; }   // u32, i32, f32
+        10|11|12 => { f.seek(SeekFrom::Current(8))?; } // u64, i64, f64
+        8 => { let l=read_u64(f)? as i64; f.seek(SeekFrom::Current(l))?; } // string
         9 => { let at=read_u32(f)?; let al=read_u64(f)?;
-               for _ in 0..al { skip_val(f, at)?; } }
-        _ => {}
+               for _ in 0..al { skip_val(f, at)?; } } // array
+        _ => { println!("Unknown type: {}", t); } // unknown
     }
     Ok(())
 }

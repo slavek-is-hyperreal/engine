@@ -1,6 +1,6 @@
 // src/nn_layer.rs
-// KONWENCJA: eml_count()=wewnętrzne, node_count()=wszystkie
-// UWAGA: mul_eml wymaga x,y > 0
+// CONVENTION: eml_count()=internal, node_count()=all
+// NOTE: mul_eml requires x,y > 0
 
 use crate::ast::*;
 use crate::constant_fold::asis_preprocess_weights;
@@ -17,7 +17,7 @@ pub struct LayerOptResult {
     pub sample_k: usize,
 }
 
-/// Dot product z CF + ASIS. Wymaga input > 0.
+/// Dot product with CF + ASIS. Requires input > 0.
 pub fn build_dot_product_eml(input: &[Arc<EmlNode>], weights: &[f32]) -> Arc<EmlNode> {
     assert_eq!(input.len(), weights.len());
     assert!(!input.is_empty());
@@ -40,7 +40,7 @@ pub fn build_dot_product_eml(input: &[Arc<EmlNode>], weights: &[f32]) -> Arc<Eml
     acc
 }
 
-/// Offline: wchłoń γ i 1/√dk do W_Q. Koszt runtime: 0 węzłów.
+/// Offline: absorb γ and 1/√dk into W_Q. Runtime cost: 0 nodes.
 pub fn preprocess_wq_offline(w_q: &[f32], gamma: &[f32], d_k: usize, hidden: usize) -> Vec<f32> {
     let scale = 1.0 / (d_k as f32).sqrt();
     w_q.iter().enumerate().map(|(i, &w)| w * gamma[i % hidden] * scale).collect()
@@ -52,7 +52,7 @@ pub fn measure_costs(k: usize) -> (usize, usize, usize) {
      CostModel::dot_product_cf_asis(k))
 }
 
-/// Buduj próbkę K=sample_k (używaj ≤32 żeby uniknąć gigantycznych drzew)
+/// Build a sample K=sample_k (use ≤32 to avoid gigantic trees)
 pub fn build_and_optimize_sample(weights: &[f32], sample_k: usize) -> LayerOptResult {
     assert!(weights.len() >= sample_k);
     let w = &weights[..sample_k];
@@ -95,7 +95,7 @@ mod tests {
         let input: Vec<Arc<EmlNode>> = (0..4).map(|i| var(&format!("x{}",i))).collect();
         let tree = build_dot_product_eml(&input, &weights);
         assert!(tree.eml_count() > 0);
-        assert!(tree.eml_count() <= 125); // naiwne K=4: 36*4-19=125
+        assert!(tree.eml_count() <= 125); // naive K=4: 36*4-19=125
     }
 
     #[test]
@@ -110,12 +110,12 @@ mod tests {
         if let Some(v) = try_evaluate(&tree, &c) {
             assert!((v - expected).abs() < 1e-3, "expected={} got={}", expected, v);
         }
-        // None jest OK dla ujemnych pośrednich wartości
+        // None is OK for negative intermediate values
     }
 
     #[test]
     fn test_negative_weights_limitation() {
-        // Dokumentuje znane ograniczenie: None dla ujemnych wag
+        // Documents known limitation: None for negative weights
         let weights = vec![0.5f32, -0.3, 0.7, -0.2];
         let xv = vec![1.0f64, 2.0, 3.0, 4.0];
         let input: Vec<Arc<EmlNode>> = (0..4).map(|i| var(&format!("x{}",i))).collect();
@@ -123,8 +123,8 @@ mod tests {
         let mut c = ConstantMap::new();
         for (i,&v) in xv.iter().enumerate() { c.insert(format!("x{}",i), v); }
         let r = try_evaluate(&tree, &c);
-        println!("Ujemne wagi -> {:?} (None jest oczekiwane)", r);
-        // Nie assertujemy None bo zależy od wartości pośrednich
+        println!("Negative weights -> {:?} (None is expected)", r);
+        // We don't assert None because it depends on intermediate values
     }
 
     #[test]

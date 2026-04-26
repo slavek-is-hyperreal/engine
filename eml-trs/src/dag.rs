@@ -1,26 +1,27 @@
 // src/dag.rs
 //
-// KONWENCJA: eml_count() = liczba węzłów wewnętrznych Eml(l,r)
-//            node_count() = eml_count() + liczba liści
-// Koszty z exhaustive search (paper Odrzywołka) = node_count()
-// Koszty w testach tego projektu = eml_count() (tylko wewnętrzne)
+// CONVENTION: eml_count() = number of internal Eml(l,r) nodes
+//             node_count() = eml_count() + number of leaves
+// Costs from exhaustive search (Odrzywołek paper) = node_count()
+// Costs in this project's tests = eml_count() (internal only)
 
 use crate::ast::*;
 use std::sync::Arc;
 use std::collections::HashMap;
 
-/// Węzeł DAG — może być współdzielony
+/// DAG Node — can be shared
 #[derive(Debug)]
 pub struct DagNode {
     pub node: Arc<EmlNode>,
     pub id: usize,
-    pub ref_count: usize,  // ile razy jest reużywany
+    /// Number of occurrences of this node in the full unoptimized tree
+    pub ref_count: usize,
 }
 
-/// Graf DAG z tabelą węzłów
+/// DAG graph with node table
 pub struct EmlDag {
     nodes: Vec<DagNode>,
-    /// Mapowanie hash drzewa → id węzła (dla deduplicacji)
+    /// Mapping of tree hash → node id (for deduplication)
     hash_map: HashMap<String, usize>,
 }
 
@@ -29,7 +30,7 @@ impl EmlDag {
         Self { nodes: Vec::new(), hash_map: HashMap::new() }
     }
 
-    /// Oblicza hash strukturalny drzewa (dla deduplicacji)
+    /// Computes the structural hash of a tree (for deduplication)
     fn structural_hash(node: &EmlNode) -> String {
         match node {
             EmlNode::One => "1".to_string(),
@@ -43,7 +44,7 @@ impl EmlDag {
         }
     }
 
-    /// Dodaje węzeł do DAG, reużywa jeśli identyczny już istnieje
+    /// Adds a node to the DAG, reuses if an identical one already exists
     pub fn add_node(&mut self, node: Arc<EmlNode>) -> usize {
         let hash = Self::structural_hash(&node);
         if let Some(&id) = self.hash_map.get(&hash) {
@@ -56,25 +57,25 @@ impl EmlDag {
         id
     }
 
-    /// Całkowita liczba węzłów w DAG (bez duplikatów)
+    /// Total number of nodes in the DAG (without duplicates)
     pub fn unique_node_count(&self) -> usize {
         self.nodes.len()
     }
 
-    /// Całkowita liczba węzłów w drzewie (z duplikatami)
+    /// Total number of nodes in the tree (with duplicates)
     pub fn tree_node_count(&self) -> usize {
-        // Zgodnie z konwencją node_count(), całkowita liczba węzłów w drzewie to suma
-        // wszystkich wystąpień (ref_count) poszczególnych unikalnych węzłów DAG.
+        // According to the node_count() convention, the total number of nodes in the tree
+        // is the sum of all occurrences (ref_count) of individual unique DAG nodes.
         self.nodes.iter().map(|n| n.ref_count).sum()
     }
 
-    /// Oszczędność przez współdzielenie
+    /// Savings from sharing
     pub fn sharing_savings(&self) -> usize {
         self.tree_node_count().saturating_sub(self.unique_node_count())
     }
 }
 
-/// Konwertuje drzewo do DAG
+/// Converts a tree to a DAG
 pub fn tree_to_dag(root: Arc<EmlNode>) -> EmlDag {
     let mut dag = EmlDag::new();
     add_to_dag(&mut dag, root);
@@ -95,14 +96,14 @@ mod tests {
 
     #[test]
     fn test_shared_subtree() {
-        // Drzewo gdzie ln(x) pojawia się dwa razy
+        // Tree where ln(x) appears twice
         let x = var("x");
         let ln_x = ln_node(x.clone());
-        // eml(ln(x), ln(x)) — ln(x) powinno być współdzielone
+        // eml(ln(x), ln(x)) — ln(x) should be shared
         let tree = eml(ln_x.clone(), ln_x.clone());
         let dag = tree_to_dag(tree);
-        // Bez DAG: 7 + 7 + 1 = 15 węzłów
-        // Z DAG: ln(x) raz (7) + eml (1) = 8 unikalnych
+        // Without DAG: 7 + 7 + 1 = 15 nodes
+        // With DAG: ln(x) once (7) + eml (1) = 8 unique
         assert!(dag.unique_node_count() < 15);
     }
 

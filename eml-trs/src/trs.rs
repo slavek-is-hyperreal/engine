@@ -1,26 +1,26 @@
 // src/trs.rs
 //
-// KONWENCJA: eml_count() = liczba węzłów wewnętrznych Eml(l,r)
-//            node_count() = eml_count() + liczba liści
-// Koszty z exhaustive search (paper Odrzywołka) = node_count()
-// Koszty w testach tego projektu = eml_count() (tylko wewnętrzne)
+// CONVENTION: eml_count() = number of internal Eml(l,r) nodes
+//             node_count() = eml_count() + number of leaves
+// Costs from exhaustive search (Odrzywołek paper) = node_count()
+// Costs in this project's tests = eml_count() (internal only)
 
 use crate::ast::*;
 use std::sync::Arc;
 
-/// Wynik dopasowania wzorca.
-// Bindings usunięte (było nieużywane)
+/// Pattern match result.
+// Bindings removed (was unused)
 
-/// Jedna reguła przepisywania.
+/// A single rewriting rule.
 pub struct Rule {
     pub name: &'static str,
     pub apply: fn(&Arc<EmlNode>) -> Option<Arc<EmlNode>>,
 }
 
-/// Sprawdza czy węzeł to One
+/// Checks if the node is One
 fn is_one(n: &EmlNode) -> bool { matches!(n, EmlNode::One) }
 
-/// Sprawdź czy węzeł to eml(x, 1) — czyli exp(x)
+/// Check if the node is eml(x, 1) — which is exp(x)
 pub fn is_exp_pattern(n: &EmlNode) -> Option<Arc<EmlNode>> {
     if let EmlNode::Eml(l, r) = n {
         if is_one(r) { return Some(l.clone()); }
@@ -28,7 +28,7 @@ pub fn is_exp_pattern(n: &EmlNode) -> Option<Arc<EmlNode>> {
     None
 }
 
-/// Sprawdź czy węzeł to ln(x) — wzorzec: eml(1, eml(eml(1, x), 1))
+/// Check if the node is ln(x) — pattern: eml(1, eml(eml(1, x), 1))
 pub fn is_ln_pattern(n: &EmlNode) -> Option<Arc<EmlNode>> {
     if let EmlNode::Eml(l, r) = n {
         if is_one(l) {
@@ -46,18 +46,18 @@ pub fn is_ln_pattern(n: &EmlNode) -> Option<Arc<EmlNode>> {
     None
 }
 
-/// Katalog reguł TRS
+/// Catalog of TRS rules
 pub fn get_rules() -> Vec<Rule> {
     vec![
-        // REGUŁA 3: ln(exp(x)) → x
+        // RULE 3: ln(exp(x)) → x
         Rule {
             name: "ln_exp_cancel",
             apply: |node| {
-                // Szukamy wzorca: eml(1, eml(eml(1, eml(x, 1)), 1))
-                // czyli ln(exp(x))
+                // Looking for pattern: eml(1, eml(eml(1, eml(x, 1)), 1))
+                // which is ln(exp(x))
                 if let Some(inner) = is_ln_pattern(node) {
                     if let Some(x) = is_exp_pattern(&inner) {
-                        // Sprawdź czy redukcja zmniejsza węzły
+                        // Check if reduction decreases nodes
                         let before = node.eml_count();
                         let after = x.eml_count();
                         if after < before { return Some(x); }
@@ -67,7 +67,7 @@ pub fn get_rules() -> Vec<Rule> {
             },
         },
 
-        // REGUŁA 4: exp(ln(x)) → x
+        // RULE 4: exp(ln(x)) → x
         Rule {
             name: "exp_ln_cancel",
             apply: |node| {
@@ -82,7 +82,7 @@ pub fn get_rules() -> Vec<Rule> {
             },
         },
 
-        // REGUŁA 5: eml(ln(a), 1) → a
+        // RULE 5: eml(ln(a), 1) → a
         Rule {
             name: "eml_ln_one_absorb",
             apply: |node| {
@@ -99,7 +99,7 @@ pub fn get_rules() -> Vec<Rule> {
             },
         },
 
-        // REGUŁA 8: eml(1, 1) → Const(e)
+        // RULE 8: eml(1, 1) → Const(e)
         Rule {
             name: "constant_e",
             apply: |node| {
@@ -112,7 +112,7 @@ pub fn get_rules() -> Vec<Rule> {
             },
         },
 
-        // REGUŁA 9: eml(ln(exp(x)), y) → eml(x, y)
+        // RULE 9: eml(ln(exp(x)), y) → eml(x, y)
         Rule {
             name: "left_absorb",
             apply: |node| {
@@ -130,7 +130,7 @@ pub fn get_rules() -> Vec<Rule> {
             },
         },
 
-        // REGUŁA 10: eml(x, exp(ln(y))) → eml(x, y)
+        // RULE 10: eml(x, exp(ln(y))) → eml(x, y)
         Rule {
             name: "right_absorb",
             apply: |node| {
@@ -150,13 +150,13 @@ pub fn get_rules() -> Vec<Rule> {
     ]
 }
 
-/// Główna funkcja TRS: bottom-up traversal do fixpoint
-/// Stosuje reguły aż żadna nie może być zastosowana
+/// Main TRS function: bottom-up traversal to fixpoint
+/// Applies rules until none can be applied
 pub fn rewrite(node: Arc<EmlNode>) -> Arc<EmlNode> {
-    // Baza: liście zwracamy bez zmian
+    // Base case: return leaves unchanged
     if node.is_leaf() { return node; }
 
-    // Bottom-up: najpierw zredukuj dzieci
+    // Bottom-up: first reduce children
     let node = if let EmlNode::Eml(l, r) = node.as_ref() {
         let new_l = rewrite(l.clone());
         let new_r = rewrite(r.clone());
@@ -169,7 +169,7 @@ pub fn rewrite(node: Arc<EmlNode>) -> Arc<EmlNode> {
         node
     };
 
-    // Fixpoint: stosuj reguły aż żadna nie pasuje
+    // Fixpoint: apply rules until no match
     let rules = get_rules();
     let mut current = node;
     let mut changed = true;
@@ -178,7 +178,7 @@ pub fn rewrite(node: Arc<EmlNode>) -> Arc<EmlNode> {
         changed = false;
         for rule in &rules {
             if let Some(reduced) = (rule.apply)(&current) {
-                // Bezpieczeństwo: reguła musi zmniejszyć liczbę węzłów
+                // Safety: rule must decrease the number of nodes
                 assert!(
                     reduced.eml_count() < current.eml_count(),
                     "Rule '{}' did not reduce node count: {} -> {}",
@@ -186,9 +186,9 @@ pub fn rewrite(node: Arc<EmlNode>) -> Arc<EmlNode> {
                     current.eml_count(),
                     reduced.eml_count()
                 );
-                current = rewrite(reduced); // rekurencja na nowym węźle
+                current = rewrite(reduced); // recursion on the new node
                 changed = true;
-                break; // reset od początku reguł
+                break; // reset rules from the beginning
             }
         }
     }
@@ -196,7 +196,7 @@ pub fn rewrite(node: Arc<EmlNode>) -> Arc<EmlNode> {
     current
 }
 
-/// Statystyki redukcji
+/// Reduction statistics
 pub struct ReductionStats {
     pub nodes_before: usize,
     pub nodes_after: usize,
@@ -241,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_no_increase() {
-        // TRS nigdy nie może zwiększyć liczby węzłów
+        // TRS must never increase the number of nodes
         let tree = eml(ln_node(exp_node(var("x"))), one());
         let before = tree.eml_count();
         let reduced = rewrite(tree);
@@ -250,10 +250,10 @@ mod tests {
 
     #[test]
     fn test_nested_reduction() {
-        // Zagnieżdżone ln(exp()) powinny się zredukować
+        // Nested ln(exp()) should reduce
         let x = var("x");
         let tree = ln_node(exp_node(ln_node(exp_node(x.clone()))));
         let reduced = rewrite(tree);
-        assert!(reduced.eml_count() < 10); // powinno być małe
+        assert!(reduced.eml_count() < 10); // should be small
     }
 }

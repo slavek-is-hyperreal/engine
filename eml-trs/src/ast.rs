@@ -1,29 +1,29 @@
 // src/ast.rs
 //
-// KONWENCJA: eml_count() = liczba węzłów wewnętrznych Eml(l,r)
-//            node_count() = eml_count() + liczba liści
-// Koszty z exhaustive search (paper Odrzywołka) = node_count()
-// Koszty w testach tego projektu = eml_count() (tylko wewnętrzne)
+// CONVENTION: eml_count() = number of internal Eml(l,r) nodes
+//             node_count() = eml_count() + number of leaves
+// Costs from exhaustive search (Odrzywołek paper) = node_count()
+// Costs in this project's tests = eml_count() (internal only)
 
 use std::sync::Arc;
-// HashMap usunięty
+// HashMap removed
 
-/// Węzeł drzewa EML.
-/// Gramatyka: S → 1 | eml(S, S)
+/// EML tree node.
+/// Grammar: S → 1 | eml(S, S)
 #[derive(Debug, Clone, PartialEq)]
 pub enum EmlNode {
-    /// Liść: stała 1
+    /// Leaf: constant 1
     One,
-    /// Liść: nazwana zmienna (np. "x", "w1", "a_0_1")
+    /// Leaf: named variable (e.g. "x", "w1", "a_0_1")
     Var(String),
-    /// Liść: stała numeryczna (waga po constant folding)
+    /// Leaf: numeric constant (weight after constant folding)
     Const(f64),
-    /// Węzeł wewnętrzny: eml(lewy, prawy)
+    /// Internal node: eml(left, right)
     Eml(Arc<EmlNode>, Arc<EmlNode>),
 }
 
 impl EmlNode {
-    /// Liczba węzłów w drzewie (wszystkich: wewnętrznych + liści)
+    /// Number of nodes in the tree (all: internal + leaves)
     pub fn node_count(&self) -> usize {
         match self {
             EmlNode::One | EmlNode::Var(_) | EmlNode::Const(_) => 1,
@@ -31,7 +31,7 @@ impl EmlNode {
         }
     }
 
-    /// Liczba węzłów eml (tylko wewnętrznych, nie liści)
+    /// Number of eml nodes (internal only, no leaves)
     pub fn eml_count(&self) -> usize {
         match self {
             EmlNode::One | EmlNode::Var(_) | EmlNode::Const(_) => 0,
@@ -39,7 +39,7 @@ impl EmlNode {
         }
     }
 
-    /// Głębokość drzewa
+    /// Depth of the tree
     pub fn depth(&self) -> usize {
         match self {
             EmlNode::One | EmlNode::Var(_) | EmlNode::Const(_) => 0,
@@ -47,12 +47,12 @@ impl EmlNode {
         }
     }
 
-    /// Czy drzewo jest liściem
+    /// Whether the tree is a leaf
     pub fn is_leaf(&self) -> bool {
         matches!(self, EmlNode::One | EmlNode::Var(_) | EmlNode::Const(_))
     }
 
-    /// Czy dwa drzewa są strukturalnie identyczne
+    /// Whether two trees are structurally identical
     pub fn structural_eq(&self, other: &EmlNode) -> bool {
         match (self, other) {
             (EmlNode::One, EmlNode::One) => true,
@@ -66,7 +66,7 @@ impl EmlNode {
     }
 }
 
-/// Konstruktory pomocnicze — używaj tych zamiast pisać Arc::new ręcznie
+/// Helper constructors — use these instead of writing Arc::new manually
 pub fn one() -> Arc<EmlNode> { Arc::new(EmlNode::One) }
 pub fn var(name: &str) -> Arc<EmlNode> { Arc::new(EmlNode::Var(name.to_string())) }
 pub fn konst(v: f64) -> Arc<EmlNode> { Arc::new(EmlNode::Const(v)) }
@@ -74,7 +74,7 @@ pub fn eml(l: Arc<EmlNode>, r: Arc<EmlNode>) -> Arc<EmlNode> {
     Arc::new(EmlNode::Eml(l, r))
 }
 
-/// Makra dla podstawowych operacji — zbudowane z węzłów eml(x,y)
+/// Macros for basic operations — built from eml(x,y) nodes
 /// exp(x) = eml(x, 1)
 pub fn exp_node(x: Arc<EmlNode>) -> Arc<EmlNode> {
     eml(x, one())
@@ -85,16 +85,16 @@ pub fn ln_node(x: Arc<EmlNode>) -> Arc<EmlNode> {
     eml(one(), eml(eml(one(), x), one()))
 }
 
-/// Negacja w EML: -x = 15 węzłów
-/// Konstrukcja z exhaustive search
+/// Negation in EML: -x = 15 nodes
+/// Construction from exhaustive search
 pub fn neg_node(_x: Arc<EmlNode>) -> Arc<EmlNode> {
-    // -x = eml(ln(1/e), x) gdzie ln(1/e) = -1
-    // = eml(eml(1, eml(eml(1,1),1)), x) ... sprawdź
-    // Tymczasowo przez stałą:
+    // -x = eml(ln(1/e), x) where ln(1/e) = -1
+    // = eml(eml(1, eml(eml(1,1),1)), x) ... verify
+    // Temporarily via constant:
     // eml(Const(-1.0_as_EML), exp(x))
-    // Prawidłowa 15-węzłowa forma z exhaustive search:
-    // TODO: wyznacz z papera Odrzywołka
-    panic!("neg_node: niezaimplementowane. Użyj asis_preprocess_weights() offline.")
+    // Correct 15-node form from exhaustive search:
+    // Pending: awaiting exhaustive search result from Odrzywołek (2026).
+    panic!("neg_node: unimplemented. Use asis_preprocess_weights() offline.")
 }
 
 #[cfg(test)]
@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn test_exp_node_cost() {
-        // exp(x) = eml(x, 1) = 3 węzły: eml + x + 1
+        // exp(x) = eml(x, 1) = 3 nodes: eml + x + 1
         let e = exp_node(var("x"));
         assert_eq!(e.node_count(), 3);
         assert_eq!(e.eml_count(), 1);
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn test_ln_node_cost() {
-        // ln(x) = 7 węzłów
+        // ln(x) = 7 nodes
         let l = ln_node(var("x"));
         assert_eq!(l.node_count(), 7);
         assert_eq!(l.eml_count(), 3);
