@@ -20,6 +20,9 @@ pub struct ParallelWave {
 }
 
 /// The complete TSLP schedule for a DAG.
+/// 
+/// Note: The parallelism_factor measures the depth reduction. 
+/// Pending: Formal verification of the NC1 depth bound O(log N) vs empirical wave count (2026).
 pub struct TslpSchedule {
     pub waves: Vec<ParallelWave>,
     pub total_nodes: usize,

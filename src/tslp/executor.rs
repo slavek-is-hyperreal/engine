@@ -9,6 +9,7 @@
 // 2. Mapping NodeId → buffer slot
 // 3. Dispatching EML kernel for each wave
 //
+// Pending: Physical GPU validation of buffer slot mapping (2026).
 // For now: CPU simulation of the wave structure to measure
 // the depth reduction empirically.
 
