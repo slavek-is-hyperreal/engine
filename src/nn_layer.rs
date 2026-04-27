@@ -3,7 +3,6 @@
 // NOTE: mul_eml requires x,y > 0
 
 use crate::ast::*;
-use crate::constant_fold::asis_preprocess_weights;
 use crate::trs::rewrite;
 use crate::cost_model::CostModel;
 use std::sync::Arc;

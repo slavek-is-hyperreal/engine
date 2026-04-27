@@ -77,7 +77,7 @@ pub fn get_round_trip_rules() -> Vec<RoundTripRule> {
                 if let EmlNode::Eml(l, r) = node.as_ref() {
                     if let Some(a) = is_ln_pattern(l) {
                         if let Some(inner_r) = is_exp_pattern(r) {
-                            if let EmlNode::Eml(rl, rr) = inner_r.as_ref() {
+                            if let EmlNode::Eml(_rl, rr) = inner_r.as_ref() {
                                 // rl should be ln(0) or similar
                                 if let Some(rr_inner) = is_exp_pattern(rr) {
                                     // We found Add(ln(x), exp(exp(y)))? No.

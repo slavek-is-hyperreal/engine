@@ -1,6 +1,6 @@
 // src/backends/vulkan_eml.rs
 
-use wgpu::{Device, Queue, ComputePipeline, Buffer};
+use wgpu::{Device, Queue, ComputePipeline};
 use bytemuck::{Pod, Zeroable};
 
 #[repr(C)]

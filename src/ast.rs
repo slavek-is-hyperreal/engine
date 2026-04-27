@@ -23,42 +23,75 @@ pub enum EmlNode {
 }
 
 impl EmlNode {
-    /// Number of nodes in the tree (all: internal + leaves)
+    /// Number of nodes in the tree (all: internal + leaves).
+    /// DAG-aware: counts unique nodes only.
     pub fn node_count(&self) -> usize {
-        match self {
-            EmlNode::One | EmlNode::Var(_) | EmlNode::Const(_) => 1,
-            EmlNode::Eml(l, r) => 1 + l.node_count() + r.node_count(),
+        use std::collections::HashSet;
+        let mut visited = HashSet::new();
+        fn count(node: &EmlNode, visited: &mut HashSet<usize>) -> usize {
+            let ptr = node as *const EmlNode as usize;
+            if visited.contains(&ptr) { return 0; }
+            visited.insert(ptr);
+            match node {
+                EmlNode::One | EmlNode::Var(_) | EmlNode::Const(_) => 1,
+                EmlNode::Eml(l, r) => 1 + count(l, visited) + count(r, visited),
+            }
         }
+        count(self, &mut visited)
     }
 
-    /// Number of eml nodes (internal only, no leaves)
+    /// Number of eml nodes (internal only, no leaves).
+    /// DAG-aware: counts unique internal nodes only.
     pub fn eml_count(&self) -> usize {
-        match self {
-            EmlNode::One | EmlNode::Var(_) | EmlNode::Const(_) => 0,
-            EmlNode::Eml(l, r) => 1 + l.eml_count() + r.eml_count(),
+        use std::collections::HashSet;
+        let mut visited = HashSet::new();
+        fn count(node: &EmlNode, visited: &mut HashSet<usize>) -> usize {
+            let ptr = node as *const EmlNode as usize;
+            if visited.contains(&ptr) { return 0; }
+            visited.insert(ptr);
+            match node {
+                EmlNode::One | EmlNode::Var(_) | EmlNode::Const(_) => 0,
+                EmlNode::Eml(l, r) => 1 + count(l, visited) + count(r, visited),
+            }
         }
+        count(self, &mut visited)
     }
 
-    /// Depth of the tree
+    /// Depth of the tree.
+    /// DAG-aware: uses caching to avoid redundant path traversal.
     pub fn depth(&self) -> usize {
-        match self {
-            EmlNode::One | EmlNode::Var(_) | EmlNode::Const(_) => 0,
-            EmlNode::Eml(l, r) => 1 + l.depth().max(r.depth()),
+        use std::collections::HashMap;
+        let mut cache = HashMap::new();
+        fn get_depth(node: &EmlNode, cache: &mut HashMap<usize, usize>) -> usize {
+            let ptr = node as *const EmlNode as usize;
+            if let Some(&d) = cache.get(&ptr) { return d; }
+            let d = match node {
+                EmlNode::One | EmlNode::Var(_) | EmlNode::Const(_) => 0,
+                EmlNode::Eml(l, r) => 1 + get_depth(l, cache).max(get_depth(r, cache)),
+            };
+            cache.insert(ptr, d);
+            d
         }
+        get_depth(self, &mut cache)
     }
 
-    /// Whether the tree is a leaf
+    /// Whether the tree is a leaf.
     pub fn is_leaf(&self) -> bool {
         matches!(self, EmlNode::One | EmlNode::Var(_) | EmlNode::Const(_))
     }
 
-    /// Whether two trees are structurally identical
+    /// Whether two trees are structurally identical.
+    /// DAG-aware: uses pointer equality as a fast shortcut.
     pub fn structural_eq(&self, other: &EmlNode) -> bool {
+        // Fast shortcut: if they are the same physical object, they are equal
+        if std::ptr::eq(self, other) { return true; }
+
         match (self, other) {
             (EmlNode::One, EmlNode::One) => true,
             (EmlNode::Var(a), EmlNode::Var(b)) => a == b,
             (EmlNode::Const(a), EmlNode::Const(b)) => (a - b).abs() < 1e-10,
             (EmlNode::Eml(l1, r1), EmlNode::Eml(l2, r2)) => {
+                // Note: children are Arc<EmlNode>, their structural_eq will also check ptr_eq
                 l1.structural_eq(l2) && r1.structural_eq(r2)
             }
             _ => false,

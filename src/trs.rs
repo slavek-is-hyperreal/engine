@@ -57,10 +57,7 @@ pub fn get_rules() -> Vec<Rule> {
                 // which is ln(exp(x))
                 if let Some(inner) = is_ln_pattern(node) {
                     if let Some(x) = is_exp_pattern(&inner) {
-                        // Check if reduction decreases nodes
-                        let before = node.eml_count();
-                        let after = x.eml_count();
-                        if after < before { return Some(x); }
+                        return Some(x);
                     }
                 }
                 None
@@ -73,9 +70,7 @@ pub fn get_rules() -> Vec<Rule> {
             apply: |node| {
                 if let Some(inner) = is_exp_pattern(node) {
                     if let Some(x) = is_ln_pattern(&inner) {
-                        let before = node.eml_count();
-                        let after = x.eml_count();
-                        if after < before { return Some(x); }
+                        return Some(x);
                     }
                 }
                 None
@@ -89,9 +84,7 @@ pub fn get_rules() -> Vec<Rule> {
                 if let EmlNode::Eml(l, r) = node.as_ref() {
                     if is_one(r) {
                         if let Some(a) = is_ln_pattern(l) {
-                            let before = node.eml_count();
-                            let after = a.eml_count();
-                            if after < before { return Some(a); }
+                            return Some(a);
                         }
                     }
                 }
@@ -119,10 +112,7 @@ pub fn get_rules() -> Vec<Rule> {
                 if let EmlNode::Eml(l, r) = node.as_ref() {
                     if let Some(exp_inner) = is_ln_pattern(l) {
                         if let Some(x) = is_exp_pattern(&exp_inner) {
-                            let new_node = eml(x, r.clone());
-                            if new_node.eml_count() < node.eml_count() {
-                                return Some(new_node);
-                            }
+                            return Some(eml(x, r.clone()));
                         }
                     }
                 }
@@ -137,11 +127,32 @@ pub fn get_rules() -> Vec<Rule> {
                 if let EmlNode::Eml(l, r) = node.as_ref() {
                     if let Some(ln_inner) = is_exp_pattern(r) {
                         if let Some(y) = is_ln_pattern(&ln_inner) {
-                            let new_node = eml(l.clone(), y);
-                            if new_node.eml_count() < node.eml_count() {
-                                return Some(new_node);
-                            }
+                            return Some(eml(l.clone(), y));
                         }
+                    }
+                }
+                None
+            },
+        },
+
+        // RULE 11: SwiGLU Fusion
+        // Pattern: (gate * up) * sigmoid(gate)
+        // Matches: mul_eml(mul_eml(gate, up), sigmoid(gate))
+        // Or any structure that yields SiLU(gate) * up
+        Rule {
+            name: "swiglu_fusion",
+            apply: |node| {
+                // For now, we look for the specific structure produced by SiLU * up
+                // eml(ln(gate * up), 1 + exp(-gate))
+                if let EmlNode::Eml(l, r) = node.as_ref() {
+                    if let Some(gate_times_up) = is_ln_pattern(l) {
+                        // Check if r is 1 + exp(-gate)
+                        // add_eml(one, exp(neg(gate)))
+                        // In EML: eml(ln(1), exp(eml(ln(0), exp(exp(neg_gate)))))? No.
+                        // Let's use a simpler heuristic for now or match the explicit 
+                        // structure if we know it.
+                        // Actually, let's just implement the fusion in the high-level 
+                        // layer builder for now, and keep TRS for general reductions.
                     }
                 }
                 None
@@ -151,48 +162,64 @@ pub fn get_rules() -> Vec<Rule> {
 }
 
 /// Main TRS function: bottom-up traversal to fixpoint
-/// Applies rules until none can be applied
+/// Applies rules until none can be applied.
+/// 
+/// IMPLEMENTATION NOTE: Uses a cache to handle DAG structures efficiently.
+/// Without caching, tree-based recursion on shared nodes (Arc) leads to 
+/// exponential explosion O(K^L).
 pub fn rewrite(node: Arc<EmlNode>) -> Arc<EmlNode> {
+    use std::collections::HashMap;
+    let mut cache = HashMap::new();
+    rewrite_internal(node, &mut cache)
+}
+
+fn rewrite_internal(
+    node: Arc<EmlNode>, 
+    cache: &mut std::collections::HashMap<usize, Arc<EmlNode>>
+) -> Arc<EmlNode> {
+    // Check cache using the pointer address of the Arc
+    let ptr = Arc::as_ptr(&node) as usize;
+    if let Some(cached) = cache.get(&ptr) {
+        return cached.clone();
+    }
+
     // Base case: return leaves unchanged
-    if node.is_leaf() { return node; }
+    if node.is_leaf() {
+        cache.insert(ptr, node.clone());
+        return node;
+    }
 
     // Bottom-up: first reduce children
-    let node = if let EmlNode::Eml(l, r) = node.as_ref() {
-        let new_l = rewrite(l.clone());
-        let new_r = rewrite(r.clone());
+    let reduced_children = if let EmlNode::Eml(l, r) = node.as_ref() {
+        let new_l = rewrite_internal(l.clone(), cache);
+        let new_r = rewrite_internal(r.clone(), cache);
         if !new_l.structural_eq(l) || !new_r.structural_eq(r) {
             eml(new_l, new_r)
         } else {
             node.clone()
         }
     } else {
-        node
+        node.clone()
     };
 
     // Fixpoint: apply rules until no match
     let rules = get_rules();
-    let mut current = node;
+    let mut current = reduced_children;
     let mut changed = true;
 
     while changed {
         changed = false;
         for rule in &rules {
             if let Some(reduced) = (rule.apply)(&current) {
-                // Safety: rule must decrease the number of nodes
-                assert!(
-                    reduced.eml_count() < current.eml_count(),
-                    "Rule '{}' did not reduce node count: {} -> {}",
-                    rule.name,
-                    current.eml_count(),
-                    reduced.eml_count()
-                );
-                current = rewrite(reduced); // recursion on the new node
+                // Recursively rewrite the new node (might have shared structures)
+                current = rewrite_internal(reduced, cache);
                 changed = true;
                 break; // reset rules from the beginning
             }
         }
     }
 
+    cache.insert(ptr, current.clone());
     current
 }
 

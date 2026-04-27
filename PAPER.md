@@ -652,7 +652,16 @@ that generates the computation graph. Networks that have learned simple
 functions would have short generators; networks that memorized noise would not.
 This is a formal, measurable notion of "what the network actually learned."
 
-### 10.3 Monte Carlo Tree Search for TRS Ordering
+### 10.3 Ganardi TSLP Balancing
+
+Theorem C3 guarantees EML inference ∈ NC1 via the Ganardi, Jeż \& Lohrey
+(JACM 2021) balancing algorithm. The current `eml-trs` implementation
+measures raw EML tree depth (pre-balancing). Implementing the Ganardi
+algorithm would transform the unbalanced TSLP into a balanced form of
+depth $O(\log N)$ in linear time — directly realizing the NC1 bound.
+This is the highest-priority theoretical implementation task.
+
+### 10.4 Monte Carlo Tree Search for TRS Ordering
 
 The EML TRS is non-confluent: different rule application orders reach
 different local minima. A systematic approach would apply Monte Carlo Tree
@@ -1058,12 +1067,15 @@ Brent's theorem (1974), every algebraic expression of size $n$ can be
 reorganized into a circuit of depth $\log n$. Applied to the uniform
 EML algebra, this places EML network inference in $NC^1$.
 
-*Work-depth tradeoff.* The transformation increases total work by only a
-constant factor relative to the CSE-compressed DAG. Evaluation depth
-drops from $O(\text{depth})$ (sequential layers) to $O(\log N)$
-(parallel TSLP traversal), with total work $O(N_{\text{comp}})$.
-For TinyLlama with 22 layers: theoretical depth $\log_2(22) \approx 5$
-parallel steps instead of 22 sequential.
+*Work-depth tradeoff.* The Ganardi transformation increases total work by
+only a constant factor relative to the CSE-compressed DAG. After
+balancing, evaluation depth drops from $O(N)$ (unbalanced tree) to
+$O(\log N)$ (balanced TSLP), with total work $O(N_{\text{comp}})$.
+For TinyLlama with 22 layers and the full TSLP grammar: theoretical
+balanced depth $\approx \log_2(N_{\text{layer}}) \approx 5$ parallel
+steps. Note: this bound applies to the **balanced** TSLP after the
+Ganardi transformation, not to the raw EML tree depth (see empirical
+measurements below).
 
 *Execution without decompression.* Lohrey \& Maneth (2006) proved that
 deterministic tree automata evaluate on TSLP directly in polynomial time,
@@ -1092,41 +1104,59 @@ time. The $NC^1$ bound assumes exact arithmetic; floating-point error
 accumulation under parallel scheduling requires separate numerical
 analysis.
 
-*Empirical verification.* The TSLP scheduler was implemented in the
-`dev/tslp-scheduler` branch of `eml-trs` (module `src/tslp/`). The
-implementation assigns depth levels to EML DAG nodes and groups them
-into parallel "waves" — sets of nodes with no mutual dependencies that
-can be dispatched simultaneously. Results on simplified transformer-like
-layer chains:
+*Empirical measurement.* The TSLP scheduler was implemented in
+`eml-trs` (module `src/tslp/`). The implementation assigns depth levels
+to EML DAG nodes and groups them into parallel "waves" — sets of nodes
+with no mutual dependencies. An important clarification on what is being
+measured: the wave count equals the **raw EML tree depth** of the input
+expression, not the depth after Ganardi balancing. Theorem C3 guarantees
+that a balanced TSLP of depth $O(\log N)$ exists and can be constructed
+in $O(g)$ time — but this balancing step is not yet implemented in
+`eml-trs`. The measurements below show pre-balancing depth.
 
-| Layers ($n$) | $K$ | Sequential steps | TSLP waves | Speedup | $\lceil\log_2 n\rceil$ |
-|:------------:|:---:|:----------------:|:----------:|:-------:|:----------------------:|
-| 2 | 4 | 2 | 1 | 2.0× | 1 |
-| 4 | 4 | 4 | 2 | 2.0× | 2 |
-| 8 | 4 | 8 | 5 | 1.6× | 3 |
-| 16 | 4 | 16 | 9 | 1.8× | 4 |
-| 22 | 4 | 22 | 12 | 1.8× | 5 |
-| 32 | 4 | 32 | 17 | 1.9× | 5 |
-| 32 | 64 | 32 | 33 | 1.0× | 5 |
+Results on simplified transformer-like layer chains (corrected, DAG-aware
+implementation — earlier measurements for $K \geq 16$ were invalid due to
+exponential traversal without DAG deduplication):
 
-The depth of the TSLP wave schedule grows sub-linearly with the number of
-layers — consistent with $O(\log N)$ theoretical prediction. For $K=4$
-and 32 layers, TRS reduces 32 sequential steps to 17 parallel waves
-(1.88× speedup). The graph depth of 17 remains constant regardless of
-the number of identity-equivalent layers, confirming that TRS "flattens"
-the model algebraically.
+| Layers ($n$) | $K$ | EML tree depth (waves) | Sequential steps | Speedup | $\lceil\log_2 n\rceil$ |
+|:------------:|:---:|:----------------------:|:----------------:|:-------:|:----------------------:|
+| 2  | 4  | 1   | 2  | 2.0×  | 1 |
+| 4  | 4  | 2   | 4  | 2.0×  | 2 |
+| 8  | 4  | 5   | 8  | 1.6×  | 3 |
+| 16 | 4  | 9   | 16 | 1.8×  | 4 |
+| 22 | 4  | 12  | 22 | 1.8×  | 5 |
+| 32 | 4  | 17  | 32 | 1.9×  | 5 |
+| 2  | 16 | 53  | 2  | 0.04× | 1 |
+| 2  | 64 | 69  | 2  | 0.03× | 1 |
+| 22 | 16 | 613 | 22 | 0.04× | 5 |
+| 22 | 64 | 789 | 22 | 0.03× | 5 |
+| 32 | 64 | 1149| 32 | 0.03× | 5 |
 
-For $K=64$ (TinyLlama attention head dimension), the speedup is 1× at
-32 layers — the simplified layer model does not yet capture the residual
-connections and weight sharing that produce the bulk of parallelism in
-real transformers. Incorporating residual connections (which collapse
-to single EML nodes via Fusion 5) is expected to substantially increase
-the speedup factor. This remains an open empirical question.
+**Interpretation.** For $K=4$ (identity-chain layer model), TRS collapses
+repeated $\ln(\exp(\cdot))$ patterns, reducing tree depth sub-linearly
+with layers. For $K \geq 16$ (realistic dot-product layers), the raw EML
+tree depth exceeds the number of sequential layers by a large margin —
+because a single dot-product of length $K$ already has depth
+$\Theta(K \cdot c_{\mathrm{ln}})$ before any balancing, where
+$c_{\mathrm{ln}} = 3$ is the depth of a single $\ln$ node.
 
-The key finding is that TSLP scheduling is not worse than sequential
-execution for any tested configuration, and produces measurable speedup
-for small $K$ — validating the scheduling mechanism even if the full
-$O(\log N)$ depth reduction requires the complete transformer layer model.
+This does not contradict Theorem C3. The theorem guarantees that a
+balanced TSLP of depth $O(\log N)$ **exists** — but reaching it requires
+the Ganardi balancing transformation, which restructures the grammar
+non-trivially. The measurements confirm that the **unbalanced** EML
+tree is deep; the theoretical result concerns the **balanced** form
+after $O(g)$ transformation.
+
+**What the $K=4$ result does confirm:** TRS itself (without balancing)
+finds algebraic shortcuts that reduce depth when repeated structure
+exists — specifically, $\ln(\exp(x)) \to x$ collapses entire layers.
+This is the key insight: EML's uniform grammar enables TRS to find
+cross-layer reductions invisible to heterogeneous IRs.
+
+**Open implementation task.** The Ganardi balancing algorithm
+(linear-time TSLP rebalancing) is the missing step between the current
+depth measurements and the $O(\log N)$ bound of Theorem C3. This is
+listed as a future work item in Section 10.
 
 ### C.4 Succinct Representation: Zero Label Overhead
 
