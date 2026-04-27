@@ -364,7 +364,7 @@ AST level, is exposed by the round-trip.
 tested the identity $\ln(x) + \ln(y) = \ln(xy)$ (Rule RT1). For small trees 
 (single variable operands), the rule yields zero net gain: the standard EML 
 representation of addition is already highly optimized, and the cost of 
-expanding the algebraic product $\ln(\texttt{mul\_eml}(x, y))$ 
+expanding the algebraic product $\ln(\mathrm{mul\_eml}(x, y))$ 
 cancels out the savings. This confirms that the base EML TRS is near-optimal 
 for local subtrees. The value of Round-Trip emerges in global identities—such 
 as scaling invariance in Softmax (RT2)—which require cross-layer analysis 
@@ -1037,8 +1037,8 @@ lower bound $\approx 9.6\text{B} - 48$ bits. The gap is negligible.
 *Zero-label advantage over existing formats.* Classical heterogeneous
 networks require $N \cdot \log_2(|\Sigma|)$ bits for operator labels:
 
-| Format | Operators $|\Sigma|$ | Label bits/node | Label overhead (4.8B nodes) |
-|:-------|:-------------------:|:---------------:|:---------------------------:|
+| Format | Operators (Σ) | Label bits/node | Label overhead (4.8B nodes) |
+|:-------|:-------------:|:---------------:|:---------------------------:|
 | ONNX | >200 | 7.64 bits | 4.6 GB |
 | GGUF | ~50 | 5.64 bits | 3.4 GB |
 | EML (this work) | 1 | **0 bits** | **0 GB** |
