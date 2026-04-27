@@ -39,11 +39,26 @@ pub(crate) fn swiglu_fused(gate: Arc<EmlNode>, up: Arc<EmlNode>) -> Arc<EmlNode>
     let exp_neg_gate = exp_node(neg_gate);
     let denominator = add_eml(one(), exp_neg_gate);
 
-    // Step 3: fused result = eml(ln(gate*up), denominator)
-    // = exp(ln(gate*up)) - ln(denominator)
-    // = gate*up - ln(1 + exp(-gate))
-    // = gate*up * sigmoid(gate)   [by definition of SiLU]
-    eml(ln_numerator, denominator)
+    // Step 3: fused result = A / B = exp(ln(A) - ln(B))
+    // In EML: eml(sub_eml(ln(ln(A)), B), one())
+    // = exp(exp(ln(ln(A))) - ln(exp(B))) - ln(1)
+    // = exp(ln(A) - B)
+    // Since B = denominator = 1 + exp(-gate), ln(B) is NOT B.
+    // Wait! sub_eml(ln(ln(A)), exp(ln(B))) = ln(A) - ln(B).
+    // So we need: eml(sub_eml(ln(ln(ln_numerator)), exp_node(ln_node(denominator))), one())
+    // Simplified: eml(sub_eml(ln_node(ln_numerator), denominator), one())
+    // Verify: exp(exp(ln_node(ln_numerator)) - ln(exp(denominator)))
+    //        = exp(ln_numerator - denominator)
+    // No, we want exp(ln(A) - ln(B)).
+    
+    // denominator is already a value to be passed to ln().
+    // So sub_eml(ln_node(ln_numerator), denominator)
+    // = exp(ln_node(ln_numerator)) - ln(denominator)
+    // = ln(numerator) - ln(denominator) = ln(numerator / denominator)
+    // Then eml(that, one()) = exp(ln(num/den)) - 0 = num/den.
+    
+    let ln_ratio = eml(ln_node(ln_numerator), denominator);
+    eml(ln_ratio, one())
 }
 
 #[cfg(test)]

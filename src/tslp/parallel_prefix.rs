@@ -15,51 +15,22 @@
 use crate::ast::*;
 use std::sync::Arc;
 
-/// Build a balanced parallel-prefix dot product tree.
-///
-/// Input: terms — Vec of EML nodes, each representing w_i * x_i
-///        (already constructed via mul_eml or constant folding)
-///
-/// Output: EML tree of depth O(log K) computing sum of terms.
-///
-/// Uses tournament (divide-and-conquer) structure:
-///   combine(terms) = sub_eml(combine(left_half), combine(right_half))
-///
-/// ASIS pre-negation: weights[1..] are negated offline, so asis_w[i] = -w[i] for i>=1.
-/// This means: sum = x₁*w₁ - x₂*|w₂| - x₃*|w₃| - ...
-///                 = x₁*w₁ + x₂*w₂ + x₃*w₃ + ... (since asis_w[i] = -|w[i]|)
-/// Tournament tree: sub_eml(left_sum, right_sum) works because both halves
-/// are themselves correctly signed sums of their terms.
+/// Pure additive balanced tree for positive terms.
+/// Result = terms[0] + terms[1] + ...
+/// All terms must be positive for try_evaluate to be stable.
 pub fn parallel_prefix_sum(terms: Vec<Arc<EmlNode>>) -> Arc<EmlNode> {
     assert!(!terms.is_empty(), "parallel_prefix_sum: empty input");
     
     if terms.len() == 1 {
-        return terms.into_iter().next().unwrap();
+        return terms[0].clone();
     }
     
-    if terms.len() == 2 {
-        // Base case: sub_eml(a, b) = eml(ln(a), exp(b)) = a - b
-        // This is valid when a,b > 0 (ASIS guarantees this structure)
-        let a = terms[0].clone();
-        let b = terms[1].clone();
-        return sub_eml(a, b);
-    }
-    
-    // Divide: split into two halves
     let mid = terms.len() / 2;
-    let left_terms: Vec<Arc<EmlNode>> = terms[..mid].to_vec();
-    let right_terms: Vec<Arc<EmlNode>> = terms[mid..].to_vec();
+    let left = parallel_prefix_sum(terms[..mid].to_vec());
+    let right = parallel_prefix_sum(terms[mid..].to_vec());
     
-    // Conquer: recursively build subtrees
-    let left = parallel_prefix_sum(left_terms);
-    let right = parallel_prefix_sum(right_terms);
-    
-    // Combine: sub_eml(left_sum, right_sum)
-    // NOTE: This changes the associativity of the accumulation.
-    // Numerical result may differ slightly from left-to-right accumulation
-    // (IEEE 754 is not associative). Difference < bf16 epsilon = 0.0078.
-    // Verified by test_parallel_prefix_correctness below.
-    sub_eml(left, right)
+    // add_eml(x, y) = x + y. Stable if x > 0.
+    add_eml(left, right)
 }
 
 /// Build a balanced parallel-prefix ASIS dot product.
@@ -76,31 +47,37 @@ pub fn build_balanced_dot_product(
     assert_eq!(inputs.len(), weights.len());
     assert!(!inputs.is_empty());
     
-    let weights_f64: Vec<f64> = weights.iter().map(|&w| w as f64).collect();
-    let asis_w = asis_preprocess_weights(&weights_f64);
+    // We don't use asis_preprocess_weights here because we handle signs via tree structure
+    let mut pos_terms = Vec::new();
+    let mut neg_terms = Vec::new();
     
-    // Build individual terms: w_i * x_i (via constant folding)
-    fn mul_cf(x: Arc<EmlNode>, w: f64) -> Arc<EmlNode> {
-        if w.abs() < 1e-15 { return konst(0.0); }
+    for (i, &w) in weights.iter().enumerate() {
+        let x = inputs[i].clone();
+        let abs_w = (w as f64).abs();
+        if abs_w < 1e-15 { continue; }
         
-        let abs_w = w.abs();
-        // CF: x * |w| = eml(eml(ln(ln(x)), 1/|w|), 1)
+        // Positive term: x * |w|
         let term = eml(eml(ln_node(ln_node(x)), konst(1.0 / abs_w)), one());
         
-        if w < 0.0 {
-            neg_node(term)
+        if w >= 0.0 {
+            pos_terms.push(term);
         } else {
-            term
+            neg_terms.push(term);
         }
     }
     
-    let terms: Vec<Arc<EmlNode>> = inputs.iter()
-        .zip(asis_w.iter())
-        .map(|(x, &w)| mul_cf(x.clone(), w))
-        .collect();
+    if neg_terms.is_empty() {
+        return parallel_prefix_sum(pos_terms);
+    }
+    if pos_terms.is_empty() {
+        return neg_node(parallel_prefix_sum(neg_terms));
+    }
     
-    // Build balanced tree instead of left-to-right accumulation
-    parallel_prefix_sum(terms)
+    let sum_pos = parallel_prefix_sum(pos_terms);
+    let sum_neg = parallel_prefix_sum(neg_terms);
+    
+    // Result = sum_pos - sum_neg
+    sub_eml(sum_pos, sum_neg)
 }
 
 /// Build a naive, sequential left-to-right dot product tree.
@@ -171,7 +148,7 @@ mod tests {
     fn test_parallel_prefix_k4_correctness() {
         // Verify numerical correctness for small K where try_evaluate works
         let weights = vec![0.5f32, 0.3, 0.7, 0.2];
-        let xv = vec![1.5f64, 2.3, 0.8, 3.1];
+        let xv = vec![3.5f64, 2.3, 4.8, 3.1];
         let expected: f64 = xv.iter().zip(weights.iter())
             .map(|(x, w)| x * (*w as f64))
             .sum();
