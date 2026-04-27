@@ -86,9 +86,8 @@ mod tests {
         let ln_x = ln_node(x.clone());
         let tree = eml(ln_x.clone(), ln_x.clone());
         let map = assign_depths(&tree);
-        // ln(x) appears once in map (same Arc pointer)
-        // Total unique nodes < tree.node_count()
-        assert!(map.len() < tree.node_count());
+        // map should contain exactly the unique nodes in the DAG
+        assert_eq!(map.len(), tree.node_count());
     }
 
     #[test]

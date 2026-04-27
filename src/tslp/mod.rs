@@ -15,7 +15,17 @@
 pub mod depth;
 pub mod scheduler;
 pub mod executor;
+pub mod parallel_prefix;
+pub mod grammar;
+pub mod rake_compress;
 
 pub use depth::{assign_depths, max_depth};
 pub use scheduler::{build_schedule, TslpSchedule};
 pub use executor::{simulate_execution, measure_transformer_depth_reduction};
+pub use parallel_prefix::{
+    parallel_prefix_sum, 
+    build_balanced_dot_product,
+    measure_depth_improvement,
+};
+pub use grammar::{TslpGrammar, TslpRhs, LeafKind, extract_grammar, compression_ratio};
+pub use rake_compress::{rake_compress, measure_rake_compress_improvement};

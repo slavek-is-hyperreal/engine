@@ -187,16 +187,14 @@ mod tests {
     #[test]
     fn test_neg_node_structure() {
         // neg_node uses extended grammar with Const(0.0)
-        // node_count = 1 (eml) + 7 (ln) + 1 (konst 0) + 3 (exp) + 1 (var x) = 13
         let x = var("x");
         let neg = neg_node(x.clone());
         // Must be an Eml node (not a panic)
         assert!(matches!(neg.as_ref(), EmlNode::Eml(_, _)));
-        // Must have reasonable node count (extended grammar: 11 internal + leaves)
+        // Must have reasonable node count (DAG-aware)
         assert!(neg.node_count() > 0);
         assert!(neg.node_count() < 20); // sanity: not explosion
     }
-
     #[test]
     fn test_neg_node_evaluates_correctly() {
         // neg_node uses extended grammar: eml(ln(0), exp(x))
@@ -217,6 +215,18 @@ mod tests {
         }
         // Note: try_evaluate(neg_node(x), c) returns None due to ln(0) guard.
         // This is documented and handled by backends (ALU/Vulkan).
+    }
+
+    #[test]
+    fn test_tree_node_count_correct() {
+        let x = var("x");
+        let y = var("y");
+        let tree = eml(ln_node(x.clone()), exp_node(y.clone()));
+        // Unique nodes: eml(root), 3 from ln, 1 from exp, leaves {1, x, y}
+        // Total internal: 1 (root) + 3 (ln) + 1 (exp) = 5
+        // Total unique nodes: 5 (eml) + 3 (leaves: 1, x, y) = 8
+        assert_eq!(tree.eml_count(), 5);
+        assert_eq!(tree.node_count(), 8);
     }
 
     #[test]

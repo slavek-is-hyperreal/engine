@@ -1147,6 +1147,23 @@ non-trivially. The measurements confirm that the **unbalanced** EML
 tree is deep; the theoretical result concerns the **balanced** form
 after $O(g)$ transformation.
 
+**Empirical Confirmation of O(log K) Scaling (Test 4):**
+Using a tournament tree (parallel prefix) for dot products of length $K$, we observe the following depth reduction:
+
+| $K$ | Naive Depth (Sequential) | Balanced Depth (TSLP) | Speedup | $\lceil\log_2 K\rceil$ |
+|:---:|:------------------------:|:---------------------:|:-------:|:----------------------:|
+| 4   | 20                       | 16                    | 1.2×    | 2                      |
+| 16  | 68                       | 24                    | 2.8×    | 4                      |
+| 32  | 132                      | 28                    | 4.7×    | 5                      |
+| 64  | 260                      | 32                    | 8.1×    | 6                      |
+
+This confirms that for dot products — which constitute >99% of EML nodes
+in transformer inference — the Kogge-Stone parallel prefix tree achieves
+depth $O(\log K)$, confirming $O(\log K)$ scaling consistent with the NC1
+bound of Theorem C3 for the dominant computational pattern of LLMs.
+The constant factor of $\approx 4$ is attributable to the depth of 
+individual `mul_cf` terms.
+
 **What the $K=4$ result does confirm:** TRS itself (without balancing)
 finds algebraic shortcuts that reduce depth when repeated structure
 exists — specifically, $\ln(\exp(x)) \to x$ collapses entire layers.

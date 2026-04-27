@@ -23,7 +23,10 @@ pub fn try_evaluate(node: &EmlNode, consts: &ConstantMap) -> Option<f64> {
             let lv = try_evaluate(l, consts)?;
             let rv = try_evaluate(r, consts)?;
             // eml(x, y) = exp(x) - ln(y)
-            if rv <= 0.0 { return None; } // ln(0) undefined
+            // We allow rv = 0.0 because ln(0) = -inf is handled by f64
+            // and exp(-inf) = 0.0, which is used in neg_node.
+            // However, rv < 0.0 is still undefined in pure EML.
+            if rv < 0.0 { return None; }
             Some(lv.exp() - rv.ln())
         }
     }
