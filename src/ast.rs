@@ -85,6 +85,36 @@ pub fn ln_node(x: Arc<EmlNode>) -> Arc<EmlNode> {
     eml(one(), eml(eml(one(), x), one()))
 }
 
+/// EML Multiplication: x * y = exp(ln(x) + ln(y))
+/// Implemented via ASIS trick (14 internal nodes).
+pub fn mul_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
+    let ln_x = ln_node(x);
+    let ln_ln_x = ln_node(ln_x);
+    let inv_e = konst(1.0 / std::f64::consts::E);
+    let ln_x_plus_1 = eml(ln_ln_x, inv_e);
+    let left = ln_node(ln_x_plus_1);
+    
+    let zero = konst(0.0);
+    let one_minus_ln_y = eml(zero, y);
+    let right = exp_node(one_minus_ln_y);
+    
+    let sum_ln = eml(left, right);
+    exp_node(sum_ln)
+}
+
+/// EML Subtraction: x - y = exp(ln(x)) - ln(exp(y))
+/// Implemented via single EML node: eml(ln(x), exp(y))
+pub fn sub_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
+    eml(ln_node(x), exp_node(y))
+}
+
+/// EML Addition: x + y = x - (0 - y)
+/// Implemented via nested EML nodes.
+pub fn add_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
+    // x + y = eml(ln(x), exp(eml(ln(0), exp(y))))
+    eml(ln_node(x), exp_node(eml(ln_node(konst(0.0)), exp_node(y))))
+}
+
 /// Negation in EML: -x = 15 nodes
 /// Construction from exhaustive search
 pub fn neg_node(_x: Arc<EmlNode>) -> Arc<EmlNode> {

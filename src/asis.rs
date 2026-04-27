@@ -22,35 +22,6 @@ pub fn build_asis_dot_product(
     assert_eq!(inputs.len(), weights.len());
     assert!(!inputs.is_empty());
 
-    // Multiplication macro: x * y = 14 nodes (internal)
-    fn mul_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
-        // x * y = exp(ln(x) + ln(y))
-        // ln(x) + ln(y) via ASIS trick:
-        //   ln(x) + 1 = eml(ln(ln(x)), 1/e)   [because exp(ln(ln(x))) - ln(1/e) = ln(x)+1]
-        //   1 - ln(y) = eml(0, y)              [because exp(0) - ln(y) = 1 - ln(y)]
-        //   (ln(x)+1) - (1-ln(y)) = ln(x) + ln(y) ✓
-        // Cost: eml_count() = 14 (internal nodes)
-        // Equivalent to node_count() ≈ 29 (all nodes including leaves)
-        
-        let ln_x = ln_node(x);
-        let ln_ln_x = ln_node(ln_x);
-        let inv_e = konst(1.0 / std::f64::consts::E);
-        let ln_x_plus_1 = eml(ln_ln_x, inv_e);
-        let left = ln_node(ln_x_plus_1);
-        
-        let zero = konst(0.0);
-        let one_minus_ln_y = eml(zero, y);
-        let right = exp_node(one_minus_ln_y);
-        
-        let sum_ln = eml(left, right);
-        exp_node(sum_ln)
-    }
-
-    // Subtraction macro: x - y = 11 nodes
-    fn sub_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
-        eml(ln_node(x), exp_node(y))
-    }
-
     // Step 1: first product A₁B₁
     let first = mul_eml(inputs[0].clone(), weights[0].clone());
 

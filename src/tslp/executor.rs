@@ -96,7 +96,7 @@ pub fn measure_transformer_depth_reduction(
             // TRS collapses this to a constant in practice, but the mathematical
             // form is incorrect. Real residual connection requires neg_node (pending).
             // This does not affect the TSLP wave count measurement.
-            current = rewrite(eml(ln_node(current), exp_node(eml(ln_node(konst(0.0)), exp_node(layer_output)))));
+            current = rewrite(add_eml(current, layer_output));
         }
     }
 
