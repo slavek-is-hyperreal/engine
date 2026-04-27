@@ -9,5 +9,6 @@ pub mod fusions;
 pub mod round_trip;
 pub mod polar;
 pub mod nn_layer;
+pub mod tslp;
 #[cfg(feature = "gguf")]
 pub mod loader;

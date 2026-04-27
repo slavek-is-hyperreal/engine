@@ -17,28 +17,50 @@ pub struct LayerOptResult {
     pub sample_k: usize,
 }
 
-/// Dot product with CF + ASIS. Requires input > 0.
+/// Dot product with CF + ASIS. Uses balanced tree for O(log K) depth.
 pub fn build_dot_product_eml(input: &[Arc<EmlNode>], weights: &[f32]) -> Arc<EmlNode> {
     assert_eq!(input.len(), weights.len());
     assert!(!input.is_empty());
-    let weights_f64: Vec<f64> = weights.iter().map(|&w| w as f64).collect();
-    let asis_w = asis_preprocess_weights(&weights_f64);
-
+    
+    // We don't need ASIS pre-negation if we use a true addition tree.
+    // mul_cf handles the weight sign correctly.
     fn mul_cf(x: Arc<EmlNode>, w: f64) -> Arc<EmlNode> {
         if w.abs() < 1e-15 { return konst(0.0); }
+        // EML multiplication identity: w*x = exp(ln(x) + ln(w))
+        // Our EML is exp(x) - ln(y).
+        // w*x = eml(eml(ln(ln(x)), konst(1.0/w)), one())
         eml(eml(ln_node(ln_node(x)), konst(1.0 / w)), one())
     }
+    
     fn sub_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
         eml(ln_node(x), exp_node(y))
     }
 
-    let mut acc = mul_cf(input[0].clone(), asis_w[0] as f64);
-    for i in 1..input.len() {
-        let p = mul_cf(input[i].clone(), asis_w[i] as f64);
-        acc = sub_eml(acc, p);
+    fn add_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
+        // x + y = x - (0 - y)
+        sub_eml(x, sub_eml(konst(0.0), y))
     }
-    acc
+
+    let mut terms: Vec<Arc<EmlNode>> = input.iter().zip(weights.iter())
+        .map(|(x, &w)| mul_cf(x.clone(), w as f64))
+        .collect();
+
+    // Balanced tree reduction
+    while terms.len() > 1 {
+        let mut next_terms = Vec::new();
+        for i in (0..terms.len()).step_by(2) {
+            if i + 1 < terms.len() {
+                next_terms.push(add_eml(terms[i].clone(), terms[i + 1].clone()));
+            } else {
+                next_terms.push(terms[i].clone());
+            }
+        }
+        terms = next_terms;
+    }
+    
+    terms[0].clone()
 }
+
 
 /// Offline: absorb γ and 1/√dk into W_Q. Runtime cost: 0 nodes.
 pub fn preprocess_wq_offline(w_q: &[f32], gamma: &[f32], d_k: usize, hidden: usize) -> Vec<f32> {

@@ -30,6 +30,10 @@ path = "benches/trs_performance.rs"
 name = "verify_output"
 path = "benches/verify_output.rs"
 [[bin]]
+name = "tslp_bench"
+path = "benches/tslp_bench.rs"
+
+[[bin]]
 name = "real_tinyllama"
 path = "benches/real_tinyllama.rs"
 required-features = ["gguf"]
