@@ -751,6 +751,41 @@ reach a sensitive sink — contains irreducible structural tension: the TRS
 cannot eliminate the anomalous node. This frames software security as a
 measurable algebraic property: vulnerability as non-reducible EML complexity.
 
+### 10.7 EML as a Unified Compiler Layer: Procedural Macro and Naga Pass
+
+Section 10.5 proposes EML as IR for both CPU and GPU compilation. This
+section specifies the concrete implementation path for `eml-trs`.
+
+**Module: `src/backends/proc_macro.rs`** — Rust CPU optimization.
+
+A procedural attribute macro `#[eml_optimize]` marks functions containing
+mathematical hot paths. Using `syn` for AST parsing and `quote` for code
+generation, the macro:
+
+1. Extracts arithmetic expressions from the function body
+2. Translates them to EML trees (via the existing `ast.rs` constructors)
+3. Applies `rewrite()` from `trs.rs`
+4. Emits optimized Rust expressions via `quote!`
+
+No MIR mutation required. Works with stable Rust. Compatible with
+`#[inline]` and `#[target_feature]`.
+
+**Module: `src/backends/naga_eml.rs`** — WGSL GPU optimization.
+
+Using naga's programmatic API:
+
+1. Parse WGSL source → naga `Module` with `Expression` tree
+2. Walk the `Expression` tree, identify branch-free mathematical subgraphs
+3. Translate to EML, apply TRS, translate back to naga `Expression`
+4. Emit optimized SPIR-V via naga's existing backend
+
+Metric: reduction in `OpExtInst` SFU instruction count in output SPIR-V.
+
+**Relationship to existing work.** This positions eml-trs as the missing
+"algebraic dialect" that MLIR lacks: a uniform $|\Sigma| = 1$ representation
+that eliminates the heuristic rule explosion affecting SPIRAL (220+ rules),
+Halide (required SMT solver for termination proof), and XLA AlgebraicSimplifier.
+
 ## 11. Conclusion
 
 We have shown that neural network inference graphs, expressed in the EML

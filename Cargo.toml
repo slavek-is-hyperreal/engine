@@ -6,12 +6,17 @@ description = "EML Term Rewriting System for neural network compression"
 authors = ["Sławek Majcher"]
 
 
+[workspace]
+members = [".", "eml-trs-macro"]
+
 [dependencies]
-# brak zewnętrznych zależności w core — pure Rust
+# core dependencies
 wgpu = "0.20"
-bytemuck = { version = "1.0", features = ["derive"] }
+bytemuck = { version = "1.16", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
+naga = { version = "0.20", optional = true, features = ["wgsl-in", "spv-out"] }
+eml-trs-macro = { path = "eml-trs-macro" }
 
 [dev-dependencies]
 # dla testów numerycznych
@@ -19,6 +24,8 @@ futures = "0.3"
 [features]
 default = []
 gguf = []
+naga-pass = ["naga"]
+proc-macro = []
 
 [[bin]]
 name = "tinyllama_costs"
@@ -37,6 +44,15 @@ path = "benches/tslp_bench.rs"
 name = "real_tinyllama"
 path = "benches/real_tinyllama.rs"
 required-features = ["gguf"]
+
+[[bin]]
+name = "naga_bench"
+path = "benches/naga_bench.rs"
+required-features = ["naga-pass"]
+
+[[bin]]
+name = "proc_macro_bench"
+path = "benches/proc_macro_bench.rs"
 
 [[bench]]
 name = "tinyllama_ops"
