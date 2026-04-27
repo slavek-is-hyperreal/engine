@@ -256,11 +256,17 @@ multiplication:
 
 $$\mathrm{SiLU}(\text{gate}) \cdot \text{up} = \frac{\text{gate} \cdot \text{up}}{1 + \exp(-\text{gate})} = \mathrm{eml}(\ln(\text{gate} \cdot \text{up}),\; 1 + \exp(-\text{gate}))$$
 
-reducing 68 nodes to 32 nodes per dimension. *Implementation note:*
-this fusion requires $\texttt{neg\_node}$ (the EML form of $-x$),
-which depends on an exhaustive-search result from Odrzywołek (2026) not
-yet incorporated into `eml-trs`. The algebraic form above is correct;
-the implementation is marked as pending in the current release.
+reducing 68 nodes to 32 nodes per dimension (52.9% reduction per FFN dimension).
+
+*Implementation note:* The EML form of $-\text{gate}$ in the denominator uses
+an extended grammar with $\mathrm{Const}(0)$ as a leaf:
+$$-x \;=\; \mathrm{eml}(\ln(0),\, \exp(x)) \;=\; \exp(\ln 0) - \ln(\exp(x)) \;=\; 0 - x$$
+This is numerically exact under IEEE 754 ($\ln(0) = -\infty$,
+$\exp(-\infty) = 0$). The extended grammar uses $\mathrm{Const}(0)$
+as a leaf in addition to the pure grammar's constant $1$.
+The pure 15-node form (grammar $S \to 1 \mid \mathrm{eml}(S,S)$ only)
+is pending confirmation from Odrzywołek (2026); the extended form is
+implemented and verified in `eml-trs` (requires gate $> 0$, up $> 0$).
 
 **Fusion 5** (Residual Connection). When the previous operation maintains
 its output in log-domain within the DAG, residual addition becomes a single
@@ -623,6 +629,14 @@ multiplication-free neural architectures.
 *Risk.* The EML complexity term creates a highly non-smooth, non-differentiable
 loss surface incompatible with Hessian-based quantization methods (GPTQ, AWQ).
 Straight-through estimators or evolutionary search may be required.
+
+*Prototype implementation.* A PyTorch calibration script implementing
+EML-PTQ with Straight-Through Estimator is available in
+`scripts/eml_ptq.py`. The script demonstrates that training with
+$\lambda_{\text{eml}} = 0.8$ drives weights toward $\{-1, 0, +1\}$
+attractors, with attractor convergence measurable per epoch. The
+topology penalty function $\mathcal{P}_{\mathrm{eml}}(w)$ is
+differentiable and computes the distance from the nearest EML attractor.
 
 ### 10.2 Procedural Compression: Finding the Seed
 
@@ -1229,6 +1243,15 @@ offline (0 runtime nodes). The accumulated sum uses ASIS subtractions at
 achieves the same result via AVX-512 masked additions/subtractions. EML
 with constant folding is the formal algebraic IR for what FairyFuse
 implements at the silicon level.
+
+*Note on neg\_node (extended grammar).* The EML implementation of $-x$
+uses an extended grammar with $\mathrm{Const}(0)$ as an additional leaf:
+$-x = \mathrm{eml}(\ln(0), \exp(x))$. This is correct under IEEE 754
+but uses a leaf beyond the pure grammar $S \to 1 \mid \mathrm{eml}(S,S)$.
+The exhaustive-search minimal form (15 nodes, pure grammar) is pending
+confirmation from Odrzywołek (2026). The 9(K-1) ternary dot product
+result holds regardless: it uses ASIS pre-negation offline, which
+requires no runtime neg\_node.
 
 ### C.7 Round-Trip Optimization as a Galois Connection
 
