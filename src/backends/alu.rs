@@ -1,33 +1,33 @@
 // src/backends/alu.rs
 
-/// Decyzja: który backend użyć dla danego węzła drzewa
+/// Choice of backend for a given tree node.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BackendChoice {
-    /// Użyj EML (fast_exp/fast_ln przez FMA)
+    /// Use EML (fast_exp/fast_ln via FMA)
     Eml,
-    /// Użyj klasycznego ALU (add, mul, FMA)
+    /// Use classic ALU (add, mul, FMA)
     Alu,
 }
 
-/// Analizuje drzewo EML i decyduje który backend użyć
-/// dla każdego podgrafu
+/// Analyzes EML tree and decides which backend to use
+/// for each subgraph.
 pub fn choose_backend(node: &crate::ast::EmlNode) -> BackendChoice {
     use crate::ast::EmlNode;
 
     match node {
-        // Czyste dodawanie/mnożenie → ALU
-        // (wykrywamy przez koszty: jeśli node to dot product bez nieliniowości)
+        // Pure addition/multiplication -> ALU
+        // (Detected via cost: if node is dot product without non-linearities)
         EmlNode::Eml(_, _) => {
-            // Jeśli to wzorzec exp/ln bez zagnieżdżonych zmiennych → EML
-            // Jeśli to wzorzec akumulacji → ALU
-            // Uproszczenie: zawsze EML dla teraz
+            // If it's an exp/ln pattern without nested variables -> EML
+            // If it's an accumulation pattern -> ALU
+            // Simplification: always EML for now
             BackendChoice::Eml
         }
         _ => BackendChoice::Alu,
     }
 }
 
-/// Koszt operacji w ALU (w cyklach, nie węzłach EML)
+/// Operation cost in ALU (in cycles, not EML nodes)
 pub struct AluCost;
 
 impl AluCost {
@@ -35,7 +35,7 @@ impl AluCost {
     pub fn mul_cycles() -> usize { 4 }
     pub fn fma_cycles() -> usize { 4 }
     pub fn dot_product_cycles(k: usize) -> usize {
-        // k mnożeń + k-1 dodawań, większość przez FMA
-        k * 4 // przybliżenie dla FMA
+        // k multiplications + k-1 additions, mostly via FMA
+        k * 4 // approximation for FMA
     }
 }

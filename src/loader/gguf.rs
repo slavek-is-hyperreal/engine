@@ -1,8 +1,8 @@
 // src/loader/gguf.rs
-// Minimalny loader GGUF. Czyste Rust std, zero zewnętrznych deps.
-// Obsługuje F32 i F16. Dla kwantyzowanych modeli (Q4_K_M):
-// tensor dtype będzie > 1 → zwróci UnsupportedDType.
-// W takim przypadku pobierz wersję F16: tinyllama...F16.gguf
+// Minimal GGUF loader. Pure Rust std, zero external deps.
+// Supports F32 and F16. For quantized models (Q4_K_M):
+// tensor dtype will be > 1 -> returns UnsupportedDType.
+// In such case, download the F16 version: tinyllama...F16.gguf
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -23,11 +23,11 @@ impl std::fmt::Display for GgufError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             GgufError::Io(e) => write!(f, "IO: {}", e),
-            GgufError::InvalidMagic => write!(f, "Brak nagłówka GGUF"),
-            GgufError::UnsupportedVersion(v) => write!(f, "Wersja GGUF {} nieobsługiwana", v),
-            GgufError::TensorNotFound(n) => write!(f, "Tensor '{}' nie znaleziony", n),
+            GgufError::InvalidMagic => write!(f, "Invalid GGUF header"),
+            GgufError::UnsupportedVersion(v) => write!(f, "GGUF version {} not supported", v),
+            GgufError::TensorNotFound(n) => write!(f, "Tensor '{}' not found", n),
             GgufError::UnsupportedDType(t) =>
-                write!(f, "Typ danych {} nieobsługiwany (użyj modelu F16)", t),
+                write!(f, "Data type {} unsupported (use F16 model)", t),
         }
     }
 }
@@ -157,9 +157,9 @@ fn skip_kv(f: &mut File) -> Result<(), GgufError> {
 fn skip_val(f: &mut File, t: u32) -> Result<(), GgufError> {
     match t {
         0|1|7 => { f.seek(SeekFrom::Current(1))?; }   // u8, i8, bool
-        2|3   => { f.seek(SeekFrom::Current(2))?; }   // u16, i16
-        4|5|6 => { f.seek(SeekFrom::Current(4))?; }   // u32, i32, f32
-        10|11|12 => { f.seek(SeekFrom::Current(8))?; } // u64, i64, f64
+        2     => { f.seek(SeekFrom::Current(2))?; }   // u16, i16
+        3|4|6 => { f.seek(SeekFrom::Current(4))?; }   // i32, u32, f32
+        5|10|11|12 => { f.seek(SeekFrom::Current(8))?; } // i64, u64, f64
         8 => { let l=read_u64(f)? as i64; f.seek(SeekFrom::Current(l))?; } // string
         9 => { let at=read_u32(f)?; let al=read_u64(f)?;
                for _ in 0..al { skip_val(f, at)?; } } // array
