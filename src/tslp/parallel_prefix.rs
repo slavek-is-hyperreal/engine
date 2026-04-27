@@ -148,6 +148,8 @@ mod tests {
     fn test_parallel_prefix_k4_correctness() {
         // Verify numerical correctness for small K where try_evaluate works
         let weights = vec![0.5f32, 0.3, 0.7, 0.2];
+        // NOTE: xv values must be > 1.0 because mul_cf trick uses ln(ln(x)),
+        // which requires ln(x) > 0, i.e. x > 1.0. 
         let xv = vec![3.5f64, 2.3, 4.8, 3.1];
         let expected: f64 = xv.iter().zip(weights.iter())
             .map(|(x, w)| x * (*w as f64))

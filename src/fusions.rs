@@ -86,24 +86,23 @@ mod tests {
         let fused = swiglu_fused(gate_node, up_node);
 
         let mut c = ConstantMap::new();
-        // Test for gate=1.0, up=2.0
-        // SiLU(1.0) = 1.0 / (1 + exp(-1.0)) ≈ 0.7311
-        // SiLU(1.0) * 2.0 ≈ 1.4622
-        let gate_v = 1.0f64;
+        // Test for gate=3.0, up=2.0
+        // Use gate > e ≈ 2.718 so that ln(ln(gate)) is defined and positive
+        // for the mul_cf trick used in some dot products (consistent with parallel_prefix requirements)
+        let gate_v = 3.0f64;
         let up_v = 2.0f64;
         c.insert("gate".to_string(), gate_v);
         c.insert("up".to_string(), up_v);
 
         let expected = gate_v * up_v / (1.0 + (-gate_v).exp());
 
-        if let Some(result) = try_evaluate(&fused, &c) {
-            assert!(
-                (result - expected).abs() < 1e-6,
-                "swiglu_fused({},{}) = {} expected {}",
-                gate_v, up_v, result, expected
-            );
-        }
-        // None is acceptable if intermediate values hit ln domain
+        let result = try_evaluate(&fused, &c)
+            .expect("Should evaluate for gate > e (SwiGLU correctness)");
+            
+        assert!(
+            (result - expected).abs() < 1e-6,
+            "SwiGLU mismatch: expected {:.8}, got {:.8}", expected, result
+        );
     }
 }
 
