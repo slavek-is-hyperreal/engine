@@ -105,11 +105,14 @@ mod tests {
         let map = assign_depths(&l4);
         let depth = max_depth(&map);
 
-        println!("4-layer sequential depth: {}", depth);
-        // After TRS, ln(exp(x)) → x, so depth should collapse
-        // Even without TRS, TSLP scheduling finds parallelism
-        assert!(depth > 0); // Sanity check
-        // Key insight: depth < 4 * ln_depth(3) + 4 * exp_overhead(1) = 16
-        // because shared subexpressions reduce critical path
+        // Without TRS: 4 sequential ln(exp()) chains = 4 * 4 = 16 depth
+        // With TRS: ln(exp(x)) → x collapses each layer
+        // So depth should be significantly less than 16
+        println!("4-layer sequential depth after TRS: {}", depth);
+        assert!(depth <= 16,
+            "Depth {} exceeds naive bound of 16 (4 layers × 4 depth each)",
+            depth);
+        // Ideally depth = 1 (after full TRS collapse), but current implementation
+        // might keep some structure if not fully reduced.
     }
 }
