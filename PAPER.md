@@ -8,7 +8,7 @@ Independent Researcher, Kraków, Poland
 We present a framework for algebraic compression of neural network inference
 graphs using the EML (Exp-Minus-Log) operator recently introduced by
 Odrzywołek (2026). By translating network operations into uniform binary
-trees over a single binary operator $\operatorname{eml}(x,y) = \exp(x) - \ln(y)$,
+trees over a single binary operator $\mathrm{eml}(x,y) = \exp(x) - \ln(y)$,
 we apply a Term Rewriting System (TRS) that reduces node count through
 algebraic identities, constant folding of frozen weights, and operation
 fusion at layer boundaries. Applied to TinyLlama 1.1B, our method achieves
@@ -25,11 +25,11 @@ an open-source implementation in Rust: `eml-trs`.
 ## 1. Introduction
 
 The discovery by Odrzywołek (2026) that a single binary operator
-$\operatorname{eml}(x,y) = \exp(x) - \ln(y)$ generates all elementary
+$\mathrm{eml}(x,y) = \exp(x) - \ln(y)$ generates all elementary
 functions — together with the constant $1$ — establishes a continuous
 analogue of the NAND gate for mathematics. Every expression becomes a
 uniform binary tree over one operator following the grammar
-$S \to 1 \mid \operatorname{eml}(S, S)$.
+$S \to 1 \mid \mathrm{eml}(S, S)$.
 
 This uniformity opens a new avenue for neural network compression. Large
 language models such as TinyLlama consist of mathematical operations
@@ -75,13 +75,13 @@ only the terms that depend on the input.
 
 **Definition 1.** The EML (Exp-Minus-Log) operator is defined as:
 
-$$\operatorname{eml}(x, y) = \exp(x) - \ln(y)$$
+$$\mathrm{eml}(x, y) = \exp(x) - \ln(y)$$
 
 Odrzywołek (2026) proves constructively that the grammar
-$S \to 1 \mid \operatorname{eml}(S, S)$ generates all elementary functions.
+$S \to 1 \mid \mathrm{eml}(S, S)$ generates all elementary functions.
 
 **Definition 2.** The *EML node count* of an expression is the number of
-internal $\operatorname{eml}(\cdot, \cdot)$ nodes in its binary tree
+internal $\mathrm{eml}(\cdot, \cdot)$ nodes in its binary tree
 representation. The *total node count* includes leaves (variables and the
 constant $1$).
 
@@ -122,7 +122,7 @@ feed-forward network ($W_{\text{gate}}, W_{\text{up}}, W_{\text{down}}$).
 
 ### 3.1 Composition Rule
 
-**Lemma 1.** For an operation $F$ composed from $\operatorname{eml}$ nodes,
+**Lemma 1.** For an operation $F$ composed from $\mathrm{eml}$ nodes,
 with *structural overhead* $C_F$ (the number of EML nodes added beyond the
 sizes of the two subexpressions $A$, $B$):
 
@@ -140,7 +140,7 @@ The structural overheads derived from Theorem 1 are:
 
 *Note:* The total node counts in Theorem 1 include leaf nodes (variables
 and the constant $1$). The overhead $C_F$ counts only the internal
-$\operatorname{eml}$ nodes added by the operation itself, excluding the
+$\mathrm{eml}$ nodes added by the operation itself, excluding the
 two subexpression roots. Both conventions appear in the literature;
 we use total node count for cost comparisons and overhead for composition.
 
@@ -188,11 +188,11 @@ constant during inference and the activation satisfies $x > 0$, the
 multiplication $x \cdot W$ can be represented as a 5-node EML structure
 (internal nodes only):
 
-$$x \cdot W = \operatorname{eml}\!\left(\operatorname{eml}\!\left(\ln(\ln(x)),\, \tfrac{1}{W}\right),\, 1\right)$$
+$$x \cdot W = \mathrm{eml}\!\left(\mathrm{eml}\!\left(\ln(\ln(x)),\, \tfrac{1}{W}\right),\, 1\right)$$
 
 where $\tfrac{1}{W}$ is a precomputed constant leaf.
 
-*Proof.* $\operatorname{eml}(\ln(\ln(x)), \tfrac{1}{W})$
+*Proof.* $\mathrm{eml}(\ln(\ln(x)), \tfrac{1}{W})$
 $= \exp(\ln(\ln(x))) - \ln(\tfrac{1}{W})$
 $= \ln(x) + \ln(W)$.
 Then $\exp(\ln(x) + \ln(W)) = x \cdot W$. $\square$
@@ -213,11 +213,11 @@ representing a 61.1% reduction relative to the naive cost.
 
 **Theorem 4** (Log-Softmax Nativity). Log-Softmax is a native EML operation:
 
-$$\log\text{-softmax}(x_i) = x_i - \ln(S) = \operatorname{eml}(\ln(x_i),\, S)$$
+$$\log\text{-softmax}(x_i) = x_i - \ln(S) = \mathrm{eml}(\ln(x_i),\, S)$$
 
 where $S = \sum_j \exp(x_j)$, requiring exactly one EML node per output element.
 
-*Proof.* $\operatorname{eml}(\ln(x_i), S) = \exp(\ln(x_i)) - \ln(S) = x_i - \ln(S)$. $\square$
+*Proof.* $\mathrm{eml}(\ln(x_i), S) = \exp(\ln(x_i)) - \ln(S) = x_i - \ln(S)$. $\square$
 
 **Corollary 3.** Numerically stable Softmax via $\max(\mathbf{x})$ requires
 $O(3^n)$ EML nodes, since $\max(a,b) = (a + b + |a-b|)/2$ and the
@@ -233,7 +233,7 @@ The following fusions arise at boundaries between consecutive operations:
 **Fusion 1** (RMSNorm → Projection). The learned scale $\boldsymbol{\gamma}$
 in RMSNorm can be absorbed into the projection matrix offline:
 
-$$(\mathbf{x} \odot \boldsymbol{\gamma}) W_Q = \mathbf{x}\,(\operatorname{diag}(\boldsymbol{\gamma}) W_Q)$$
+$$(\mathbf{x} \odot \boldsymbol{\gamma}) W_Q = \mathbf{x}\,(\mathrm{diag}(\boldsymbol{\gamma}) W_Q)$$
 
 Cost: 0 nodes at inference, eliminating $d = 4096$ multiplications per projection.
 
@@ -254,10 +254,10 @@ eliminating the need to materialize $V$ as a separate tensor.
 **Fusion 4** (SwiGLU Stitch). At the boundary of SiLU and the gating
 multiplication:
 
-$$\operatorname{SiLU}(\text{gate}) \cdot \text{up} = \frac{\text{gate} \cdot \text{up}}{1 + \exp(-\text{gate})} = \operatorname{eml}(\ln(\text{gate} \cdot \text{up}),\; 1 + \exp(-\text{gate}))$$
+$$\mathrm{SiLU}(\text{gate}) \cdot \text{up} = \frac{\text{gate} \cdot \text{up}}{1 + \exp(-\text{gate})} = \mathrm{eml}(\ln(\text{gate} \cdot \text{up}),\; 1 + \exp(-\text{gate}))$$
 
 reducing 68 nodes to 32 nodes per dimension. *Implementation note:*
-this fusion requires $\operatorname{neg\_node}$ (the EML form of $-x$),
+this fusion requires $\texttt{neg\_node}$ (the EML form of $-x$),
 which depends on an exhaustive-search result from Odrzywołek (2026) not
 yet incorporated into `eml-trs`. The algebraic form above is correct;
 the implementation is marked as pending in the current release.
@@ -266,7 +266,7 @@ the implementation is marked as pending in the current release.
 its output in log-domain within the DAG, residual addition becomes a single
 EML node:
 
-$$x + \text{out} = \operatorname{eml}(\ln(x),\; \exp(-\text{out}))$$
+$$x + \text{out} = \mathrm{eml}(\ln(x),\; \exp(-\text{out}))$$
 
 reducing 19 nodes to 1 node.
 
@@ -364,7 +364,7 @@ AST level, is exposed by the round-trip.
 tested the identity $\ln(x) + \ln(y) = \ln(xy)$ (Rule RT1). For small trees 
 (single variable operands), the rule yields zero net gain: the standard EML 
 representation of addition is already highly optimized, and the cost of 
-expanding the algebraic product $\ln(\operatorname{mul\_eml}(x, y))$ 
+expanding the algebraic product $\ln(\texttt{mul\_eml}(x, y))$ 
 cancels out the savings. This confirms that the base EML TRS is near-optimal 
 for local subtrees. The value of Round-Trip emerges in global identities—such 
 as scaling invariance in Softmax (RT2)—which require cross-layer analysis 
@@ -561,10 +561,10 @@ loss:
 
 $$\mathcal{L}_{\text{EML-PTQ}} = \arg\min_{\tilde{W}} \left(
 \|WX - \tilde{W}X\|_2^2 + \lambda \sum_{i,j}
-\left[ C_{\operatorname{eml}}(w_{ij}) - C_{\operatorname{eml}}(\tilde{w}_{ij}) \right]
+\left[ C_{\mathrm{eml}}(w_{ij}) - C_{\mathrm{eml}}(\tilde{w}_{ij}) \right]
 \right)$$
 
-where $C_{\operatorname{eml}}(w)$ is the EML node count for multiplication
+where $C_{\mathrm{eml}}(w)$ is the EML node count for multiplication
 by $w$ after constant folding. Weights close to $\{-1, 0, +1\}$ receive
 large rewards; weights far from this set pay a penalty proportional to
 their algebraic complexity.
@@ -588,7 +588,7 @@ grammar-based graph generation) suggest that the minimal description of
 a transformer EML tree may be dramatically shorter than the tree itself.
 
 This corresponds to Kolmogorov complexity applied to EML trees: find the
-shortest program over the grammar $S \to 1 \mid \operatorname{eml}(S, S)$
+shortest program over the grammar $S \to 1 \mid \mathrm{eml}(S, S)$
 that generates the computation graph. Networks that have learned simple
 functions would have short generators; networks that memorized noise would not.
 This is a formal, measurable notion of "what the network actually learned."
@@ -666,7 +666,7 @@ keywords, declarations) prevent algebraic self-reduction.
 
 We propose extending the EML grammar with discrete control-flow operators:
 
-$$S \to 1 \mid \operatorname{eml}(S,S) \mid \texttt{if}(S,S,S) \mid \texttt{for}(S,S,S) \mid \texttt{ref}(S) \mid \texttt{deref}(S)$$
+$$S \to 1 \mid \mathrm{eml}(S,S) \mid \texttt{if}(S,S,S) \mid \texttt{for}(S,S,S) \mid \texttt{ref}(S) \mid \texttt{deref}(S)$$
 
 This extended grammar preserves EML's algebraic structure for mathematical
 expressions while adding finite-cost nodes for control flow. Each
@@ -914,7 +914,7 @@ TRS non-confluence (Theorem B2) is consistent with this — and expected.
 be a neural network whose computation graph consists of uniform EML nodes.
 After TRS optimization and Common Subexpression Elimination (CSE), the
 resulting DAG can be encoded as a Tree Straight-Line Program (TSLP) over
-the alphabet $\{\operatorname{eml}, 1\}$. This TSLP can be transformed
+the alphabet $\{\mathrm{eml}, 1\}$. This TSLP can be transformed
 in time $O(|\text{DAG}|)$ into an equivalent balanced TSLP of evaluation
 depth $O(\log N)$ and size $O(|\text{DAG}|)$, where $N$ is the
 uncompressed node count. Consequently, EML network inference belongs to
@@ -1019,7 +1019,7 @@ navigation (parent, child, subtree size) and is within a sub-logarithmic
 additive term of the information-theoretic lower bound.
 
 *Proof.* The alphabet of internal node labels is $|\Sigma| = 1$ (the
-single operator $\operatorname{eml}$). Label entropy per node:
+single operator $\mathrm{eml}$). Label entropy per node:
 $\log_2(1) = 0$ bits. Topology in BP encoding: exactly $2N$ bits
 (Munro \& Raman, 2001). Navigation via rank/select on the BP vector
 runs in $O(1)$ using POPCNT hardware instructions. $\square$
@@ -1068,10 +1068,10 @@ TRS rewriting incurs $O(\log N / \log\log N)$ per rule application.
 ### C.5 Algebraic Generalization Capacity as MDL Proxy
 
 **Conjecture C5** (Algebraic Generalization Capacity). Let $M$ be a
-neural network and $C_{\operatorname{eml}}(M)$ be the EML node count of
-its optimized inference DAG after eml-trs. Then $C_{\operatorname{eml}}(M)$
+neural network and $C_{\mathrm{eml}}(M)$ be the EML node count of
+its optimized inference DAG after eml-trs. Then $C_{\mathrm{eml}}(M)$
 is positively correlated with the model's generalization ability:
-networks with smaller $C_{\operatorname{eml}}(M)$ overfit less.
+networks with smaller $C_{\mathrm{eml}}(M)$ overfit less.
 
 *Motivation.* The Minimum Description Length (MDL) principle (Rissanen,
 1978; Grünwald, 2007) states that a model that genuinely learns a pattern
@@ -1083,11 +1083,11 @@ structure and resists compression.
 
 *Status.* This is a conjecture, not a theorem. Empirical verification
 would require: (1) training networks of varying complexity on datasets
-with known signal-to-noise ratios, (2) measuring $C_{\operatorname{eml}}$
+with known signal-to-noise ratios, (2) measuring $C_{\mathrm{eml}}$
 after eml-trs, (3) measuring test generalization error, and (4)
 computing correlation.
 
-*If confirmed*, $C_{\operatorname{eml}}$ would constitute a new,
+*If confirmed*, $C_{\mathrm{eml}}$ would constitute a new,
 data-free measure of model quality — computable from weights alone,
 without a validation dataset.
 
