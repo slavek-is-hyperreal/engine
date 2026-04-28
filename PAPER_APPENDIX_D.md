@@ -29,9 +29,9 @@ The hardware directly realizes the **Subtractive Inner Product (ASIS)** algorith
 | 1-6 | Subtraction Tree (6 levels) | 12 |
 | **Total** | **Dot Product K=64** | **15** |
 
-## D.3 Native Log-Softmax Acceleration
+Log-Softmax is treated as a native EML operation, implemented in a single hardware module without any transcendental SFU calls. By exploiting the identity $\log\text{-softmax}(x_i) = \mathrm{eml}(\ln(x_i), S)$ (where $S = \sum \exp(x_j)$), the module achieves massive instruction reduction. 
 
-Log-Softmax is treated as a native EML operation, implemented in a single hardware module without any transcendental SFU calls. By exploiting the identity $\log\text{-softmax}(x_i) = \mathrm{eml}(\ln(x_i), \sum \exp(x_j))$, the module achieves massive instruction reduction.
+**Note:** This identity assumes $x_i > 0$. In practice, hardware pre-shifts the vector to ensure all elements are positive before entering the Log-Softmax pipeline.
 
 - **Exp-Stage:** Parallel `fast_exp` units.
 - **Adder-Tree:** Balanced binary tree for sum calculation.

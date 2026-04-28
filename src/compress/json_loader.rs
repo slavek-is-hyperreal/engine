@@ -41,7 +41,11 @@ pub fn load_eml_json(json_str: &str) -> Vec<Arc<EmlNode>> {
         node_cache.insert(id, node);
     }
     
-    graph.outputs.values()
-        .map(|&id| node_cache.get(&id).expect("Output node not found").clone())
+    let mut unique_output_ids: Vec<usize> = graph.outputs.values().cloned().collect();
+    unique_output_ids.sort();
+    unique_output_ids.dedup();
+    
+    unique_output_ids.into_iter()
+        .map(|id| node_cache.get(&id).expect("Output node not found").clone())
         .collect()
 }

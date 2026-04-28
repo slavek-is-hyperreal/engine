@@ -38,11 +38,12 @@ def onnx_to_eml(onnx_path, output_json):
         mid = add_node({"type": "eml", "l": inner, "r": NODE_ONE})
         return add_node({"type": "eml", "l": NODE_ONE, "r": mid})
 
+    NODE_LN_ZERO = ln_node(NODE_ZERO)
+
     def neg_node(x_id):
         # eml(ln(0), exp(x))
-        ln_zero = ln_node(NODE_ZERO)
         ex = exp_node(x_id)
-        return add_node({"type": "eml", "l": ln_zero, "r": ex})
+        return add_node({"type": "eml", "l": NODE_LN_ZERO, "r": ex})
 
     def sub_eml(a_id, b_id):
         # eml(ln(a), exp(b))
@@ -53,18 +54,11 @@ def onnx_to_eml(onnx_path, output_json):
         return add_node({"type": "eml", "l": ln_node(a_id), "r": exp_node(neg_node(b_id))})
 
     def mul_eml(a_id, b_id):
-        # Minimal EML mul logic from ast.rs
-        ln_x = ln_node(a_id)
-        ln_ln_x = ln_node(ln_x)
-        inv_e = add_node({"type": "konst", "value": 1.0 / np.exp(1.0)})
-        ln_x_plus_1 = add_node({"type": "eml", "l": ln_ln_x, "r": inv_e})
-        left = ln_node(ln_x_plus_1)
-        
-        one_minus_ln_y = add_node({"type": "eml", "l": NODE_ZERO, "r": b_id})
-        right = exp_node(one_minus_ln_y)
-        
-        sum_ln = add_node({"type": "eml", "l": left, "r": right})
-        return exp_node(sum_ln)
+        # x * y = exp(ln(x) + ln(y))
+        ln_a = ln_node(a_id)
+        ln_b = ln_node(b_id)
+        ln_sum = add_eml(ln_a, ln_b)
+        return exp_node(ln_sum)
 
     # 4. Handle Inputs and Initializers
     for input_proto in graph.input:
@@ -82,6 +76,10 @@ def onnx_to_eml(onnx_path, output_json):
 
     # 5. Process Nodes
     print(f"Processing {len(graph.node)} ONNX nodes...")
+    
+    expanded_one = False
+    expanded_node_id = None
+    
     for node in graph.node:
         op = node.op_type
         inputs = node.input
@@ -111,12 +109,9 @@ def onnx_to_eml(onnx_path, output_json):
                     rows, cols = W.shape
                     # Expand only the FIRST large weight matrix we encounter to avoid OOM
                     # but expand it FULLY (no slicing).
-                    if not hasattr(onnx_to_eml, 'expanded_one'):
-                        setattr(onnx_to_eml, 'expanded_one', True)
+                    if not expanded_one:
+                        expanded_one = True
                         print(f"  Expanding FULL MatMul {B_name} ({rows}x{cols})...")
-                        row_nodes = []
-                        # ... loops ...
-                        # (rest of the code follows)
                         for j in range(cols):
                             terms = []
                             for k in range(rows):
@@ -142,7 +137,7 @@ def onnx_to_eml(onnx_path, output_json):
                         for i in range(1, len(row_nodes)):
                             curr = add_node({"type": "eml", "l": curr, "r": row_nodes[i]})
                         node_id = curr
-                        setattr(onnx_to_eml, 'expanded_node_id', node_id)
+                        expanded_node_id = node_id
                     else:
                         node_id = add_node({"type": "var", "name": f"skipped_{outputs[0]}"})
                 else:
@@ -169,8 +164,8 @@ def onnx_to_eml(onnx_path, output_json):
     # 6. Save result
     # For benchmarking, we explicitly output the expanded node if it exists
     final_outputs = {}
-    if hasattr(onnx_to_eml, 'expanded_node_id'):
-        final_outputs["expanded_matmul"] = getattr(onnx_to_eml, 'expanded_node_id')
+    if expanded_node_id is not None:
+        final_outputs["expanded_matmul"] = expanded_node_id
     else:
         final_outputs = {name: tid for name, tid in tensor_to_id.items() if any(name == o.name for o in graph.output)}
 

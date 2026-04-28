@@ -17,6 +17,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Transforms an unbalanced TSLP grammar into a balanced one.
+///
+/// # Warning
+/// This is a **HEURISTIC placeholder**, not the actual Ganardi SCD algorithm.
+/// It works by rebuilding the full tree, which requires **O(N) memory**
+/// and will OOM on large models. Use only for research/small tests.
 pub fn balance_grammar(grammar: &TslpGrammar) -> TslpGrammar {
     // Phase 1: Rebuild tree to use existing AST logic (temporary)
     // In a full implementation, we would operate directly on the grammar DAG.

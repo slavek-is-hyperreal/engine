@@ -113,29 +113,51 @@ pub fn exp_node(x: Arc<EmlNode>) -> Arc<EmlNode> {
     eml(x, one())
 }
 
-/// ln(x) = eml(1, eml(eml(1, x), 1))
+/// Natural logarithm: ln(x) = eml(1, eml(eml(1, x), 1))
+///
+/// # Preconditions
+/// - Mathematically requires x > 0.
 pub fn ln_node(x: Arc<EmlNode>) -> Arc<EmlNode> {
+    if let EmlNode::Const(v) = x.as_ref() {
+        debug_assert!(*v >= 0.0, "ln(x) domain error: x = {}", v);
+    }
     eml(one(), eml(eml(one(), x), one()))
 }
 
 /// EML Multiplication: x * y = exp(ln(x) + ln(y))
-/// This is a more robust version that handles small positive values.
-/// For negative values, sign-magnitude handling is required (future work).
+///
+/// # Preconditions
+/// - Requires x > 0 and y > 0 due to internal ln() calls.
+/// - For negative values, use sign-magnitude decomposition.
 pub fn mul_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
-    // x * y = exp(ln(x) + ln(y))
-    // add_eml handles the EML addition of logs
+    if let EmlNode::Const(v) = x.as_ref() {
+        debug_assert!(*v > 0.0, "mul_eml domain error: x = {}", v);
+    }
+    if let EmlNode::Const(v) = y.as_ref() {
+        debug_assert!(*v > 0.0, "mul_eml domain error: y = {}", v);
+    }
     exp_node(add_eml(ln_node(x), ln_node(y)))
 }
 
 /// EML Subtraction: x - y = exp(ln(x)) - ln(exp(y))
-/// Implemented via single EML node: eml(ln(x), exp(y))
+///
+/// # Preconditions
+/// - Requires x > 0 due to internal ln(x).
 pub fn sub_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
+    if let EmlNode::Const(v) = x.as_ref() {
+        debug_assert!(*v > 0.0, "sub_eml domain error: x = {}", v);
+    }
     eml(ln_node(x), exp_node(y))
 }
 
 /// EML Addition: x + y = x - (0 - y)
-/// Implemented via nested EML nodes.
+///
+/// # Preconditions
+/// - Requires x > 0 due to internal ln(x).
 pub fn add_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
+    if let EmlNode::Const(v) = x.as_ref() {
+        debug_assert!(*v > 0.0, "add_eml domain error: x = {}", v);
+    }
     // x + y = eml(ln(x), exp(eml(ln(0), exp(y))))
     eml(ln_node(x), exp_node(eml(ln_node(konst(0.0)), exp_node(y))))
 }

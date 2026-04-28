@@ -137,27 +137,6 @@ pub fn get_rules() -> Vec<Rule> {
 
         // RULE 11: SwiGLU Fusion
         // Pattern: (gate * up) * sigmoid(gate)
-        // Matches: mul_eml(mul_eml(gate, up), sigmoid(gate))
-        // Or any structure that yields SiLU(gate) * up
-        Rule {
-            name: "swiglu_fusion",
-            apply: |node| {
-                // For now, we look for the specific structure produced by SiLU * up
-                // eml(ln(gate * up), 1 + exp(-gate))
-                if let EmlNode::Eml(l, r) = node.as_ref() {
-                    if let Some(gate_times_up) = is_ln_pattern(l) {
-                        // Check if r is 1 + exp(-gate)
-                        // add_eml(one, exp(neg(gate)))
-                        // In EML: eml(ln(1), exp(eml(ln(0), exp(exp(neg_gate)))))? No.
-                        // Let's use a simpler heuristic for now or match the explicit 
-                        // structure if we know it.
-                        // Actually, let's just implement the fusion in the high-level 
-                        // layer builder for now, and keep TRS for general reductions.
-                    }
-                }
-                None
-            },
-        },
     ]
 }
 
@@ -206,9 +185,12 @@ fn rewrite_internal(
     let rules = get_rules();
     let mut current = reduced_children;
     let mut changed = true;
+    let mut iterations = 0;
+    const MAX_ITERATIONS: usize = 1000;
 
-    while changed {
+    while changed && iterations < MAX_ITERATIONS {
         changed = false;
+        iterations += 1;
         for rule in &rules {
             if let Some(reduced) = (rule.apply)(&current) {
                 // Recursively rewrite the new node (might have shared structures)
@@ -217,6 +199,10 @@ fn rewrite_internal(
                 break; // reset rules from the beginning
             }
         }
+    }
+    
+    if iterations == MAX_ITERATIONS {
+        eprintln!("WARNING: TRS reached MAX_ITERATIONS (possible infinite loop)");
     }
 
     cache.insert(ptr, current.clone());

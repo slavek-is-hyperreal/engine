@@ -177,9 +177,11 @@ Total: $O(n \cdot R + g \log g)$ where $R$ = number of TRS rules (constant).
 For any sequence $T$, EML-TSLP-Decompress(EML-TSLP-Compress($T$)) = $T$.
 
 *Sketch.* TRS is applied before DAG construction; all rewriting is
-semantics-preserving. DAG construction and TSLP extraction are
+semantics-preserving within the domain $(0, \infty)$ for all $\ln$ 
+arguments. DAG construction and TSLP extraction are
 information-preserving bijections. Ganardi balancing preserves the
 generated tree. Serialization/deserialization are inverse operations.
+$\square$
 
 ### Theorem 2 (Strict Superiority for $\mathcal{D}_{\mathrm{alg}}$)
 

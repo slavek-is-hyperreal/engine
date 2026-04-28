@@ -218,9 +218,8 @@ output element via shared logsumexp subgraph.
 The key identity: $\log\text{-softmax}(x_i) = x_i - \ln(S)$
 where $S = \sum_j \exp(x_j)$.
 
-In EML form: $x_i - \ln(S) = \mathrm{eml}(\ln(\exp(x_i)),\, S)$,
-which simplifies via TRS rule $\ln(\exp(x)) \to x$ to $\mathrm{eml}(x_i', S)$
-where $x_i' = x_i - \ln(\exp(x_i))$ after one rewriting step.
+In EML form: $x_i - \ln(S) = \mathrm{eml}(\ln(x_i), S)$. 
+This identity assumes $x_i > 0$. For general logits, a standard log-sum-exp shift $x_i \to x_i - \max(x_j)$ ensures the domain constraint is satisfied before conversion.
 
 The denominator $S = \sum_j \exp(x_j)$ is computed once as a shared
 subgraph (DAG node) and reused across all $n$ output elements.
@@ -235,7 +234,18 @@ recursion $C(\max_n) = 3C(\max_{n-1}) + O(1)$.
 **Recommendation:** Transformers compiled to EML should use Log-Softmax
 rather than Softmax — not for numerical stability but for algebraic nativity.
 
-### 4.4 Operation Fusion at Layer Boundaries
+### 4.4 Theoretical vs. Implementation Cost
+
+There is a gap between the theoretical lower bound of EML operators and their current robust implementation.
+
+| Operator | Theoretical Min | Current Implementation | Reason for Gap |
+|:---|:---:|:---:|:---|
+| `mul_eml` | 17 | 36 | Robustness (preventing ln(0) for weights < 1.0) |
+| `add_eml` | 19 | 19 | Optimal |
+| `sub_eml` | 11 | 11 | Optimal |
+| `neg_node` | 5 | 5 | Optimal |
+
+### 4.5 Operation Fusion at Layer Boundaries
 
 The following fusions arise at boundaries between consecutive operations:
 
@@ -344,10 +354,12 @@ giving a corrected reduction of 93.8% relative to the naive form.
 **Theorem 5** (Attention Lower Bound). Any compression scheme for full
 self-attention must preserve $\Omega(n^2 d)$ distinct computational
 dependencies. For TinyLlama-1.1B ($n=2048$, $d_k=64$, $H=32$ heads):
-the theoretical lower bound on Attention alone is
+The theoretical lower bound on Attention alone is
 $n^2 d_k H = 2048^2 \times 64 \times 32 \approx 8.6 \times 10^9$ operations.
 The empirical EML node count of 2,300 billion nodes for all layer operations
-exceeds this bound, confirming that compression is near-optimal. $\square$
+exceeds this bound by approx. 267x, indicating that while the pipeline is 
+functional, current TRS rules leave significant room for further algebraic 
+reduction toward the theoretical minimum. $\square$
 
 ---
 
@@ -567,12 +579,12 @@ eliminates all multiplication nodes:
 
 Combined with ASIS pre-negation, the cost of a dot product of length $K$
 with ternary weights reduces from $14K - 9$ nodes (CF-ASIS with float
-weights) to $9(K-1)$ nodes — only subtractions, zero multiplications.
+weights) to $11(K-1)$ nodes — only subtractions, zero multiplications.
 
 **Hardware correspondence.** FairyFuse (April 2026) independently arrives
 at the same result from the hardware side: ternary weight inference on
 CPU is most efficient via masked AVX-512 additions and subtractions,
-completely eliminating lookup tables. The $9(K-1)$ EML node count is
+completely eliminating lookup tables. The $11(K-1)$ EML node count is
 the formal algebraic description of what FairyFuse implements in silicon.
 EML with constant folding provides a higher-level IR for this optimization
 than XNOR-based representations, because node elimination occurs at compile
@@ -626,7 +638,7 @@ This is a formal, measurable notion of "what the network actually learned."
 
 ### 10.3 Ganardi TSLP Balancing
 
-Theorem C3 guarantees EML inference ∈ NC1 via the Ganardi, Jeż \& Lohrey
+Theorem C3 guarantees EML inference ∈ NC1 via the Ganardi, M., Jeż, A., & Lohrey, M.
 (JACM 2021) balancing algorithm. The current `eml-trs` implementation
 measures raw EML tree depth (pre-balancing). Implementing the Ganardi
 algorithm would transform the unbalanced TSLP into a balanced form of
@@ -645,7 +657,7 @@ Parallelization follows naturally from transformer architecture: each
 attention head and each layer are independent subgraphs optimizable
 concurrently, with synchronization only at shared DAG nodes.
 
-### 10.4 EML-Compatible Training
+### 10.5 EML-Compatible Training
 
 All results in this paper apply to post-training compression of frozen
 networks. An orthogonal direction is to train networks with EML compression
@@ -655,7 +667,7 @@ the polar coordinate positional encoding proposed in Section 8. This could
 yield networks that are simultaneously accurate and algebraically minimal,
 with EML node count as a formal measure of model simplicity.
 
-### 10.5 EML as Intermediate Representation for Shader Compilation
+### 10.6 EML as Intermediate Representation for Shader Compilation
 
 Modern GPU shaders (WGSL, GLSL, HLSL) consist almost entirely of
 continuous mathematics without branches — precisely the domain where EML
@@ -696,7 +708,7 @@ level reduces the transistor count implementing each operation. Both
 optimizations compose independently.
 
 
-### 10.6 EML-Extended Grammars for Static Security Analysis
+### 10.7 EML-Extended Grammars for Static Security Analysis
 
 Code property graphs (CPG, Yamaguchi et al., 2014) unify Abstract Syntax
 Trees (AST), Control Flow Graphs (CFG), and Program Dependence Graphs (PDG)
@@ -1018,7 +1030,7 @@ subtrees, a TSLP shares parameterized patterns with "holes" — capturing
 the repeated layer structure of transformers (same topology, different
 weights) more compactly than CSE alone.
 
-Ganardi, Jeż \& Lohrey (2019, JACM 2021) proved that any unbalanced
+Ganardi, M., Jeż, A., & Lohrey, M. (2021) proved that any unbalanced
 SLP of size $g$ can be transformed in time $O(g)$ into an equivalent
 balanced SLP of size $O(g)$ and depth $O(\log N)$ — with only a constant
 multiplicative size increase, not the $O(g \log N)$ overhead of the
@@ -1116,10 +1128,10 @@ Using a tournament tree (parallel prefix) for dot products of length $K$, we obs
 
 | $K$ | Naive Depth (Sequential) | Balanced Depth (TSLP) | Speedup | $\lceil\log_2 K\rceil$ |
 |:---:|:------------------------:|:---------------------:|:-------:|:----------------------:|
-| 4   | 20                       | 16                    | 1.2×    | 2                      |
-| 16  | 68                       | 24                    | 2.8×    | 4                      |
-| 32  | 132                      | 28                    | 4.7×    | 5                      |
-| 64  | 260                      | 32                    | 8.1×    | 6                      |
+| 4   | 20                       | 16                    | 1.2×    | 2 |
+| 16  | 68                       | 24                    | 2.8×    | 4 |
+| 32  | 132                      | 28                    | 4.7×    | 5 |
+| 64  | 260                      | 32                    | 8.1×    | 6 |
 
 This confirms that for dot products — which constitute >99% of EML nodes
 in transformer inference — the Kogge-Stone parallel prefix tree achieves
@@ -1241,14 +1253,14 @@ from weights alone, without a validation dataset.
 ### C.6 BitNet Ternary Networks and EML
 
 **Theorem C6** (BitNet EML Cost). A dot product of length $K$ with ternary
-weights $w_i \in \{-1, 0, +1\}$ requires exactly $9(K-1)$ EML nodes after
+weights $w_i \in \{-1, 0, +1\}$ requires exactly $11(K-1)$ EML nodes after
 constant folding and ASIS pre-negation — consisting entirely of subtractions,
 with zero multiplication nodes.
 
 *Proof.* For $w_i = 0$: constant folding eliminates the term (0 nodes).
 For $w_i = 1$: identity, 0 nodes. For $w_i = -1$: ASIS pre-negation handles
 offline (0 runtime nodes). The accumulated sum uses ASIS subtractions at
-11 nodes each for $K-1$ accumulation steps: $9(K-1)$ total. $\square$
+11 nodes each for $K-1$ accumulation steps: $11(K-1)$ total. $\square$
 
 *Correspondence.* The FairyFuse hardware system (April 2026) independently
 achieves the same result via AVX-512 masked additions/subtractions. EML
