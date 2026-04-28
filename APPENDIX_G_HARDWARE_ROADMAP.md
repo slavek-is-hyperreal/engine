@@ -62,10 +62,14 @@ $300 development board.
 
 ## G.3 Why GPU SFU Is the Bottleneck EML Eliminates
 
-A100 (Ampere) SFU throughput: **16 ops/cycle per SM** (official CUDA
-C++ Programming Guide). FMA throughput: **512 ops/cycle per SM** (32×
-higher). Every call to `exp()` or `log()` in a transformer kernel
-dispatches to SFU, creating a 32× throughput asymmetry.
+A100 (Ampere) SFU throughput: **16 ops/cycle per SM** (CUDA C++
+Programming Guide, arithmetic-throughput table). FP32 FMA throughput:
+**64 ops/cycle per SM** (**4× higher** than SFU). Every call to `exp()` or `log()` in a transformer kernel
+dispatches to SFU, creating a 4× throughput asymmetry.
+
+*Note:* 512 ops/cycle/SM is the Tensor Core FP16 throughput (4 TC ×
+128 FP16 FMA/cycle), not FP32 FMA. The correct FP32 FMA rate is 64,
+giving a 4× SFU bottleneck ratio, not 32×.
 
 H100 (Hopper) inherits this division. Additional latency: HBM3 cache
 miss costs ~500 cycles. The structural SFU bottleneck is architectural,
@@ -86,8 +90,10 @@ The concrete comparison for Log-Softmax on N=2048 (TinyLlama context):
 | CUDA baseline (A100) | 2 × 2048 = 4096 | ~4096 × 16 = ~65k |
 | **EML native** | **0** | **O(log 2048) × 4 ≈ 44** |
 
-This is not a marginal improvement — it is a qualitative elimination
-of the bottleneck.
+The SFU bottleneck ratio is 4× (64 FP32 FMA/cycle vs 16 SFU/cycle per SM).
+EML eliminates all SFU dispatches, converting nonlinear operations to
+pure FMA sequences and capturing the full 4× throughput advantage
+for transcendental-heavy kernels like Log-Softmax.
 
 ---
 
@@ -126,10 +132,15 @@ multipliers. This is why the estimate is 150k–250k GE total.
 architecture and the float_to_int floor bug, but does not demonstrate
 production performance. That requires 28nm or FPGA.
 
-**Submission path:** EFABLESS MPW (Multi-Project Wafer) program runs
-quarterly shuttle runs on SKY130. Cost: free (sponsored) or ~$10k for
-paid shuttle. Turnaround: ~3 months from GDSII submission to packaged
-chips. This is the fastest path to physical silicon.
+**Submission path:** Efabless ceased operations in March 2025.
+The current path to open-source silicon is **ChipFoundry** (successor),
+offering chipIgnite shuttle runs on SKY130 at approximately **$14,950
+per project**, with 2–3 shuttles per year. Turnaround is typically
+5–9 months from GDSII submission to packaged chips.
+
+Alternative: **Tiny Tapeout** (tinytapeout.com) offers lower-cost
+multi-project submissions, though the program experienced disruptions
+in 2025 (TT08/09 delayed; exploring IHP 130nm and GF180 processes).
 
 ---
 

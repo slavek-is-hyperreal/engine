@@ -14,7 +14,7 @@ done
 
 echo "Łączenie plików projektu do $OUTPUT..."
 
-# Znajdź pliki, omiń katalogi target i ukryte (np. .git)
+# Znajdź pliki, omiń katalogi target, research, paper, i inne niepotrzebne dane
 find . -type f -not -path "*/target/*" -not -path "*/\.*" -not -path "*/research/*" -not -path "*/venv/*" -not -path "*/models/*" -not -path "*/paper/*" -not -name "eml_trs_bundle*.txt" -not -name "test_gguf*" -not -name "*.gguf" | sort | while read -r file; do
     echo "======================================" >> "$OUTPUT"
     echo "Plik: $file" >> "$OUTPUT"

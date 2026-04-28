@@ -48,6 +48,15 @@ Synthesis targets for a standard 28nm process show that an EML-based architectur
 | `eml_dot_product_64` | ~11,500 | 64 | 200-500 MHz |
 | `eml_log_softmax_8` | ~1,800 | 8 | 400 MHz |
 
+*Area note:* The ~650 LUT estimate for `eml_cell` is consistent with
+reduced-precision (bf16/bfloat16) approximations using shared exp/ln
+datapaths. Full IEEE 754 float32 exp+ln typically requires 10–25k LUT-eq
+in 28nm. The estimates above assume the Minimax FMA approximation
+(Sections 9.2 and D.1) rather than full-precision transcendental units.
+The `eml_cell × 64 ≈ 41,600 LUT` discrepancy from `eml_dot_product_64`
+(~11,500 LUT) reflects heavy resource sharing in the tournament tree
+structure — subtractors share datapaths across the 6-level tree.
+
 ## D.5 Verilog Prototype Verification
 
 The following modules have been implemented and verified against the theoretical EML model:

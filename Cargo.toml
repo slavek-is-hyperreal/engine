@@ -17,6 +17,10 @@ tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 naga = { version = "0.20", optional = true, features = ["wgsl-in", "spv-out"] }
 eml-trs-macro = { path = "eml-trs-macro" }
+flate2 = "1.0"
+zstd = "0.13"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 [dev-dependencies]
 # dla testów numerycznych
@@ -39,6 +43,14 @@ path = "benches/verify_output.rs"
 [[bin]]
 name = "tslp_bench"
 path = "benches/tslp_bench.rs"
+
+[[bin]]
+name = "eml_compress"
+path = "src/bin/eml_compress.rs"
+
+[[bin]]
+name = "compress_bench"
+path = "benches/compress_bench.rs"
 
 [[bin]]
 name = "real_tinyllama"

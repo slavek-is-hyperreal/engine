@@ -1,7 +1,7 @@
 # Appendix F: Generalization Theory, EML Attractors, and Polar Unification
 
 > **Status: Theoretical extensions — unverified empirically on eml-trs.**
-> Section F.1 (SLT/LLC correlation) relies on Lan et al. (2026) results
+> Section F.1 (SLT/LLC correlation) relies on Urdshals et al. (2025, arXiv:2510.12077) results
 > on Pythia models, not on our own measurements. Section F.2 (Gumbel-Softmax)
 > extends the EML-PTQ framework in `scripts/eml_ptq.py` but is not yet
 > implemented. Section F.3 (attractors beyond ternary) is a theoretical
@@ -23,7 +23,7 @@ of the loss landscape at a solution — lower LLC means the network has
 converged to a lower-dimensional singularity, indicating it has learned a
 simpler rule rather than memorizing training noise.
 
-Lan et al. (2026) measure compressibility across Pythia models (70M–6.9B
+Urdshals et al. (2025, arXiv:2510.12077) measure compressibility across Pythia models (70M–6.9B
 parameters) and find that LLC estimates are **linearly correlated** with
 compressibility across quantization and tensor factorization methods. This
 provides the missing empirical link: models that compress well (low
@@ -182,6 +182,9 @@ centroids. A one-bit Quantized Johnson-Lindenstrauss (QJL) parity term
 compensates residual error at logit computation. Result: 3–4 bits per
 KV cache dimension with zero retraining, $\sim4.7\times$ VRAM reduction
 verified on LLaMA-3.1-8B and Qwen3-14B.
+[Note: These benchmarks are from community llama.cpp evaluations;
+the original TurboQuant paper (Zandieh et al., arXiv:2504.19874)
+evaluated on Gemma and Mistral models.]
 
 **PoPE** (Gopalakrishnan et al., 2025): Separates "what" (magnitude,
 via softplus to enforce $r \geq 0$) from "where" (phase $\phi$, modified
@@ -228,7 +231,7 @@ computation, not an incremental optimization.
 ## F.5 Summary: Three Contributions of This Appendix
 
 **F.1** formalizes Hypothesis C5 through SLT: LLC linearly correlates
-with compressibility on Pythia 70M–6.9B, and $C_{\text{eml}}$ is a
+with compressibility on Pythia 70M–6.9B (Urdshals et al. 2025), and $C_{\text{eml}}$ is a
 natural, computable LLC proxy. The PAC-Bayes bound with
 $|\sigma| = C_{\text{eml}}$ penalizes algebraic redundancy rather
 than raw parameter count — tighter than classical approaches.
@@ -249,8 +252,9 @@ KV cache, and ASIS log-domain attention computation.
 
 ---
 
-*Sources: Lan et al. (2026), "Compressibility Measures Complexity: MDL
-Meets SLT"; Dziugaite & Roy (2017), "Computing Nonvacuous Generalization
+*Sources: Urdshals et al. (2025), "Compressibility Measures Complexity: MDL
+Meets SLT"; Lau, E., et al. (2024). "Quantifying Degeneracy in Singular Models via
+the Learning Coefficient." arXiv:2308.12108. AISTATS 2025.; Dziugaite & Roy (2017), "Computing Nonvacuous Generalization
 Bounds for Deep (Stochastic) Neural Networks with Many Parameters";
 Hinton & Van Camp (1993), "Keeping Neural Networks Simple"; Willsey
 et al. (2021), "egg: Fast and Extensible Equality Saturation";

@@ -3,8 +3,8 @@
 use eml_trs::cost_model::CostModel;
 
 /// TinyLlama Parameters
-const HIDDEN_DIM: usize = 4096;
-const FFN_DIM: usize = 11008;
+const HIDDEN_DIM: usize = 2048;
+const FFN_DIM: usize = 5632;
 const SEQ_LEN: usize = 2048;
 const N_HEADS: usize = 32;
 const D_K: usize = 64;

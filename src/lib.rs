@@ -10,5 +10,6 @@ pub mod round_trip;
 pub mod polar;
 pub mod nn_layer;
 pub mod tslp;
+pub mod compress;
 #[cfg(feature = "gguf")]
 pub mod loader;

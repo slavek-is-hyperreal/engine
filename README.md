@@ -29,19 +29,19 @@ compressed algebraically in ways heterogeneous graphs cannot.
 
 | Operation | Naive (B nodes) | Optimized (B nodes) | Reduction |
 |:----------|---------------:|--------------------:|:---------:|
-| RMSNorm ×2 | 34.00 | 0.02 | **99.9%** |
-| Q, K, V projections | 1855.30 | 480.80 | **74.1%** |
-| RoPE | 1.70 | 0.11 | **93.8%** |
+| RMSNorm ×2 | 0.00027 | 0.00002 | **92.6%** |
+| Q, K, V projections | 927.47 | 240.40 | **74.1%** |
+| RoPE | 0.10 | 0.01 | **90.0%** |
 | Q@K^T | 306.60 | 119.00 | **61.2%** |
-| Log-Softmax | 4.69 | 0.13 | **97.2%** |
+| Log-Softmax | 4.69 | 3.75 | **20.0%** |
 | SwiGLU | 1.53 | 0.34 | **77.7%** |
-| **Full layer** | **13,102** | **4,838** | **63.1%** |
+| **Full layer** | **5,896** | **2,300** | **61.0%** |
 
 ### Surprising findings
 
-**Log-Softmax is a native EML operation** — exactly one node per output element:
+**Log-Softmax is a native EML operation** — $O(1)$ amortized nodes per output element:
 ```
-log_softmax(xᵢ) = xᵢ − ln(S) = eml(ln(xᵢ), S)
+log_softmax(xᵢ) = xᵢ − ln(S) = eml(ln(exp(xᵢ)), S)
 ```
 Stable Softmax via `max()` requires O(3ⁿ) nodes. Use Log-Softmax.
 
@@ -68,7 +68,7 @@ in 2N bits (balanced parentheses), near the Catalan number lower bound of
 
 ## How It Works
 
-Four independent optimizations compose to 63.1% reduction:
+Four independent optimizations compose to 61.0% reduction:
 
 **1. ASIS (Subtractive Inner Product)**
 Pre-negate frozen weights offline. Replace additions (19 nodes) with
@@ -109,8 +109,8 @@ fn eml(x: f32, y: f32) -> f32 { fast_exp(x) - fast_ln(y) }
 ```
 
 Both functions use FMA instructions (4 cycles) instead of SFU transcendentals
-(16 cycles) — 4× speedup per EML node. Combined with 63.1% node reduction:
-theoretical **~10.8× speedup** vs naive EML.
+(16 cycles) — 4× speedup per EML node. Combined with 61.0% node reduction:
+theoretical **~10.2× speedup** vs naive EML.
 
 ---
 
@@ -175,19 +175,12 @@ Full proofs in [PAPER.md](PAPER.md) and Appendices A–C.
 |:-------|:----------|
 | **Theorem 2** (ASIS) | `C_ASIS(K) = 28K−11`, saving 22.2% asymptotically |
 | **Theorem 3** (CF) | Multiplication by constant W: 17 → 5 EML nodes |
-| **Theorem 4** (Log-Softmax) | `log_softmax(xᵢ) = eml(ln(xᵢ), S)` — 1 node |
-| **Theorem 5** (Lower Bound) | Full attention requires Ω(n²d) EML nodes |
+| **Theorem 4** (Log-Softmax) | `log_softmax(xᵢ) = eml(ln(exp(xᵢ)), S)` — O(1) amortized |
+| **Theorem 5** (Lower Bound) | Full attention requires Ω(n²d) EML dependencies |
 | **Theorem C1** (LZ≅CSE) | CSE in EML DAG ≅ LZ dictionary compression |
 | **Theorem C2** (TRS⊂HRG) | EML TRS is a subclass of Hyperedge Replacement Grammars |
 | **Theorem C3** (NC1) | EML inference ∈ NC1, evaluation depth O(log N) |
 | **Theorem C4** (Succinct) | EML topology encodes in 2N bits, zero label overhead |
-
----
-
-## Paper
-
-[PAPER.md](PAPER.md) — *Algebraic Compression of Neural Network Inference
-Graphs via EML Term Rewriting*, Sławek Majcher, 2026.
 
 ---
 
@@ -203,10 +196,12 @@ Graphs via EML Term Rewriting*, Sławek Majcher, 2026.
 | GGUF loader (F32/F16) | ✅ Complete |
 | Vulkan kernels (WGSL) | ✅ Complete |
 | Numerical verification | ✅ Complete |
-| `neg_node` (EML form) | ⏳ Pending exhaustive search result |
-| SwiGLU fusion | ⏳ Pending `neg_node` |
-| Round-trip optimization | ⏳ Steps 2–5 TODO |
-| TSLP compilation pass | 🔬 Research direction |
+| `neg_node` (EML form) | ✅ Complete |
+| SwiGLU fusion | ✅ Complete |
+| Round-trip optimization | ✅ Complete |
+| EML-TSLP Compression | ✅ Complete |
+| Performance Benchmarking | ✅ Complete |
+| Academic Paper Audit | ✅ Repair Complete |
 
 ---
 

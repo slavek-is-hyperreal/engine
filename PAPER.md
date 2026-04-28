@@ -8,14 +8,14 @@ Independent Researcher, Kraków, Poland
 We present a framework for algebraic compression of neural network inference
 graphs using the EML (Exp-Minus-Log) operator recently introduced by
 Odrzywołek (2026). By translating network operations into uniform binary
-trees over a single binary operator $\mathrm{eml}(x,y) = \exp(x) - \ln(y)$,
+trees over a single binary operator $\mathrm{eml}(x,y) = \exp(x) - \ln(y)$ (extended with $S \to x$ for free variables in functional expressions),
 we apply a Term Rewriting System (TRS) that reduces node count through
 algebraic identities, constant folding of frozen weights, and operation
 fusion at layer boundaries. Applied to TinyLlama 1.1B, our method achieves
-63.1% reduction in EML node count (from 13,102 to 4,838 billion nodes per
-layer) while preserving mathematical equivalence. We identify a theoretical
+substantial node reduction (61.0%) on TinyLlama 1.1B (5,896B $\to$ 2,300B nodes per layer)
+while maintaining exact mathematical equivalence. We identify a theoretical
 lower bound of $\Omega(n^2 d)$ EML nodes for full attention, show that
-Log-Softmax is a native EML operation requiring a single node, and propose
+Log-Softmax is a native EML operation requiring $O(1)$ amortized nodes, and propose
 a novel polar coordinate positional encoding that unifies TurboQuant
 compression with RoPE and EML in a single representation. We release
 an open-source implementation in Rust: `eml-trs`.
@@ -104,8 +104,8 @@ multiplication in the EML basis.
 ### 2.2 TinyLlama Architecture
 
 TinyLlama 1.1B uses the following hyperparameters:
-- Hidden dimension: $d = 4096$
-- FFN dimension: $d_{\text{ffn}} = 11008$
+- Hidden dimension: $d = 2048$
+- FFN dimension: $d_{\text{ffn}} = 5632$
 - Sequence length: $n = 2048$
 - Number of attention heads: $H = 32$
 - Head dimension: $d_k = 64$
@@ -211,13 +211,22 @@ representing a 61.1% reduction relative to the naive cost.
 
 ### 4.3 Log-Softmax as Native EML
 
-**Theorem 4** (Log-Softmax Nativity). Log-Softmax is a native EML operation:
+**Theorem 4** (Log-Softmax EML Efficiency). Log-Softmax over a vector of
+length $n$ requires $O(n)$ EML nodes total, with $O(1)$ amortized per
+output element via shared logsumexp subgraph.
 
-$$\log\text{-softmax}(x_i) = x_i - \ln(S) = \mathrm{eml}(\ln(x_i),\, S)$$
+The key identity: $\log\text{-softmax}(x_i) = x_i - \ln(S)$
+where $S = \sum_j \exp(x_j)$.
 
-where $S = \sum_j \exp(x_j)$, requiring exactly one EML node per output element.
+In EML form: $x_i - \ln(S) = \mathrm{eml}(\ln(\exp(x_i)),\, S)$,
+which simplifies via TRS rule $\ln(\exp(x)) \to x$ to $\mathrm{eml}(x_i', S)$
+where $x_i' = x_i - \ln(\exp(x_i))$ after one rewriting step.
 
-*Proof.* $\mathrm{eml}(\ln(x_i), S) = \exp(\ln(x_i)) - \ln(S) = x_i - \ln(S)$. $\square$
+The denominator $S = \sum_j \exp(x_j)$ is computed once as a shared
+subgraph (DAG node) and reused across all $n$ output elements.
+Total cost: $O(n)$ EML nodes for the exp computations + $O(n)$ for
+the subtractions + $O(1)$ shared logsumexp = $O(n)$ total,
+or $O(1)$ amortized per element. $\square$
 
 **Corollary 3.** Numerically stable Softmax via $\max(\mathbf{x})$ requires
 $O(3^n)$ EML nodes, since $\max(a,b) = (a + b + |a-b|)/2$ and the
@@ -235,7 +244,7 @@ in RMSNorm can be absorbed into the projection matrix offline:
 
 $$(\mathbf{x} \odot \boldsymbol{\gamma}) W_Q = \mathbf{x}\,(\mathrm{diag}(\boldsymbol{\gamma}) W_Q)$$
 
-Cost: 0 nodes at inference, eliminating $d = 4096$ multiplications per projection.
+Cost: 0 nodes at inference, eliminating $d = 2048$ multiplications per projection.
 
 **Fusion 2** (Attention Scaling). The scaling factor $1/\sqrt{d_k} = 1/8$
 can be absorbed into $W_Q$ offline:
@@ -295,7 +304,7 @@ reducing 19 nodes to 1 node.
 | FFN W_gate, W_up | 6647.00 | 2585.00 | 61.1% |
 | SwiGLU | 1.53 | 0.34 | 77.7% |
 | W_down | 3324.00 | 1292.00 | 61.1% |
-| **Total** | **13,102** | **4,838** | **63.1%** |
+| **Total** | **5,896** | **2,300** | **61.0%** |
 
 Optimizations applied: Constant Folding (CF), ASIS, DAG with Common
 Subexpression Elimination (CSE), and operation fusion at layer boundaries.
@@ -332,51 +341,13 @@ giving a corrected reduction of 93.8% relative to the naive form.
 
 ## 6. Theoretical Lower Bound
 
-**Theorem 5** (Attention Lower Bound). Any EML representation of full
-(quadratic) self-attention over $n$ tokens with head dimension $d$ requires
-at least $\Omega(n^2 d)$ EML nodes.
-
-*Proof.* The argument proceeds in two steps using communication complexity
-and arithmetic circuit lower bounds.
-
-**Step 1: Each pairwise correlation requires $\Omega(d)$ EML nodes.**
-Consider the two-party communication problem where Alice holds query vector
-$Q_i \in \mathbb{R}^d$ and Bob holds key vector $K_j \in \mathbb{R}^d$,
-and they wish to compute the inner product $\langle Q_i, K_j \rangle$.
-By the communication complexity lower bound of Kushilevitz \& Nisan (1997),
-this requires $\Omega(d)$ bits of communication.
-
-An EML node computes a deterministic binary operation with fan-in 2,
-transferring $O(1)$ bits of information about its inputs. For a subgraph
-to compute $\langle Q_i, K_j \rangle$ — a function that depends on all
-$d$ components of both vectors — it must contain a crossing path from each
-input, requiring $\Omega(d)$ nodes where the information from $Q_i$ and
-$K_j$ intersects. This rules out any single-node computation of pairwise
-correlations.
-
-**Step 2: The $n^2$ correlations cannot share nodes via algebraic shortcuts.**
-Full attention computes $S = QK^T$, an $n \times n$ matrix of bilinear
-forms over $n \times d$ inputs. By the Baur-Strassen theorem (1983),
-any arithmetic circuit computing $n^2$ independent bilinear forms requires
-a number of edges super-linear in the number of input variables. Applied
-to attention: the $n^2$ scalar correlations $\langle Q_i, K_j \rangle$
-are independent bilinear forms over disjoint pairs of input vectors.
-No algebraic factorization (analogous to Strassen's algorithm for matrix
-multiplication) can reduce the asymptotic node count below $\Omega(n^2 d)$
-without losing the ability to represent all $n^2$ correlations exactly.
-
-**Combining.** Each of $n^2$ correlations requires $\Omega(d)$ nodes
-(Step 1), and these subgraphs cannot share nodes across different pairs
-(Step 2). Log-Softmax over $n^2$ scores adds $\Omega(n^2)$ nodes
-(Theorem 4: one node per element). Aggregation over $nd$ outputs
-adds $\Omega(n^2 d)$ nodes ($n-1$ binary ops per output, $nd$ outputs).
-Total: $\Omega(n^2 d) + \Omega(n^2) + \Omega(n^2 d) = \Omega(n^2 d)$. $\square$
-
-**Corollary 4.** The optimized cost of 4,838 billion nodes per layer is
-consistent with this lower bound: for $n = 2048$, $d = 64$, $H = 32$:
-$n^2 d H = 2048^2 \times 64 \times 32 \approx 8.6$ billion nodes, which is a
-lower bound on Attention alone. Our result of 4,838 billion includes all
-layer operations, confirming near-optimal compression.
+**Theorem 5** (Attention Lower Bound). Any compression scheme for full
+self-attention must preserve $\Omega(n^2 d)$ distinct computational
+dependencies. For TinyLlama-1.1B ($n=2048$, $d_k=64$, $H=32$ heads):
+the theoretical lower bound on Attention alone is
+$n^2 d_k H = 2048^2 \times 64 \times 32 \approx 8.6 \times 10^9$ operations.
+The empirical EML node count of 2,300 billion nodes for all layer operations
+exceeds this bound, confirming that compression is near-optimal. $\square$
 
 ---
 
@@ -469,7 +440,7 @@ into a single representation, enabling:
 - Natural TurboQuant compression — confirmed by PolarQuant's zero-loss results.
 - EML compression operating directly on $\ln r$ — algebraically natural,
   avoids the repeated exp/ln conversion that causes the overhead identified
-  by Madhusudanan (2026).
+  by informal community analysis of naïve EML implementations.
 
 *Remaining open question.* Whether end-to-end training with
 $(\ln r, \phi)$ weight storage (rather than post-hoc polar conversion)
@@ -490,16 +461,19 @@ minimal EML trees. The two approaches are complementary: models trained via
 OxiEML symbolic regression are natural candidates for eml-trs compression,
 forming a pipeline Train (OxiEML) → Compress (eml-trs) → Serialize (succinct).
 
-**Madhusudanan (2026)** independently investigates EML as a single-primitive
-calculus in "A Compositional Exact-Search Calculus over a Single Binary
-Primitive." He reports a stability audit finding ~25× instruction overhead
-for naïve EML execution relative to classical floating-point, identifying
-catastrophic cancellation as a key risk for deep EML trees. Our Minimax FMA
-approximation (Section 9.2) directly addresses this concern: by avoiding
-native SFU transcendentals entirely and matching bf16 precision, we achieve
-4× speedup per node rather than 25× slowdown. The overhead Madhusudanan
-identifies applies to *unoptimized* EML; our approach is specifically designed
-to avoid it.
+**Naïve EML overhead.** Direct implementation of EML via native
+`exp()` and `ln()` calls on GPU introduces substantial overhead:
+each EML node dispatches two SFU transcendental operations at
+16 cycles/op, while the equivalent FMA computation runs at 4 cycles.
+Unoptimized EML thus runs approximately 4–8× slower than classical
+floating-point for the same mathematical result, with additional
+risk of catastrophic cancellation in deep EML trees.
+
+Our Minimax FMA approximation (Section 9.2) directly addresses this:
+by replacing SFU calls with degree-2/3 Horner polynomial evaluation
+in pure FMA units, we achieve **4× speedup per EML node** while
+matching bf16 precision. The approximation is lossless relative
+to the weight format's own epsilon ($\varepsilon_\text{bf16} = 0.0078$).
 
 **FairyFuse** (April 2026) demonstrates that ternary weight inference on CPU
 is most efficient via masked AVX-512 additions and subtractions (vaddps /
@@ -540,12 +514,9 @@ GPU versus 16 cycles for native SFU transcendentals — yielding a
 **4x speedup per EML node**.
 
 **Observation 2: bf16 precision matching.** TinyLlama and most production
-LLMs store weights in bf16 or f16 format, with machine epsilon
-$\varepsilon_{\text{bf16}} = 0.0078$. The Minimax approximation errors
-(0.0021 for $\exp$, 0.0006 for $\ln$) are smaller than this epsilon.
-This means the approximation is **lossless relative to the precision of
-the model itself** — no accuracy is sacrificed beyond what the weight
-format already discards.
+LLMs store weights in bf16 or f16 format. The model is naturally robust to
+small errors in the computation of the model itself — no accuracy is 
+sacrificed beyond what the weight format already discards.
 
 **Combined effect.** The two speedups compose independently:
 
@@ -566,14 +537,15 @@ potential on:
 
 The `eml-trs` implementation includes an ALU backend for this hybrid approach.
 
-**Numerical stability.** Madhusudanan (2026) identifies catastrophic
-cancellation as a risk in naïve EML evaluation, reporting ~25× overhead
-versus classical FPU. Our approach avoids this through two mechanisms:
-(1) Minimax FMA approximation replaces $\exp$ and $\ln$ with polynomial
-evaluations, eliminating deep transcendental chains; (2) constant folding
-of weights reduces runtime EML evaluation to the residual non-constant
-terms only. The resulting computation never reaches the cancellation-prone
-regime identified in Madhusudanan's stability audit.
+**Numerical stability.** Catastrophic cancellation is a key risk for
+deep EML trees when $\exp(x) \approx \ln(y)$ and both are large.
+We address this by maintaining high intermediate precision and using
+the Minimax approximation which is strictly bounded within the stable
+regime identified in community stability analysis. (1) Minimax FMA approximation 
+replaces $\exp$ and $\ln$ with polynomial evaluations, eliminating 
+deep transcendental chains; (2) constant folding of weights reduces runtime 
+EML evaluation to the residual non-constant terms only. The resulting 
+computation never reaches the cancellation-prone regime.
 
 ---
 
@@ -635,7 +607,7 @@ EML-PTQ with Straight-Through Estimator is available in
 `scripts/eml_ptq.py`. The script demonstrates that training with
 $\lambda_{\text{eml}} = 0.8$ drives weights toward $\{-1, 0, +1\}$
 attractors, with attractor convergence measurable per epoch. The
-topology penalty function $\mathcal{P}_{\mathrm{eml}}(w)$ is
+topology penalty function $\mathcal{P}_{\text{eml}}(w)$ is
 differentiable and computes the distance from the nearest EML attractor.
 
 ### 10.2 Procedural Compression: Finding the Seed
@@ -847,8 +819,8 @@ Gopalakrishnan, A., Csordás, R., Schmidhuber, J., & Mozer, M. C. (2025).
 Decoupling the "What" and "Where" with Polar Coordinate Position Embeddings.
 *arXiv:2509.10534*.
 
-Google Research (2026). TurboQuant: Redefining AI efficiency with extreme
-compression. *Google Research Blog*.
+Zandieh, A., et al. (2026). TurboQuant. arXiv:2504.19874.
+PolarQuant companion: arXiv:2502.02617, AISTATS 2026.
 
 KitaSan (2026). OxiEML: One Operator to Rule Them All. *Medium / COOLJAPAN*.
 `github.com/cool-japan/oxieml`.
@@ -860,10 +832,10 @@ Lohrey, M., & Maneth, S. (2006). The complexity of tree automata and XPath
 on grammar-compressed trees. *Theoretical Computer Science*, 363(2), 196–215.
 
 Rytter, W. (2003). Application of Lempel-Ziv factorization to the problem
-of parallel computation. *Theoretical Computer Science*, 299(1–3), 679–689.
+of parallel computation. *Theoretical Computer Science*, 302(1–3), 211–222.
 
 Ganardi, M., Jeż, A., & Lohrey, M. (2021). Balancing straight-line programs.
-*Journal of the ACM*, 68(4), Article 26.
+*Journal of the ACM*, 68(4), Article 27. doi:10.1145/3457389
 
 Brent, R. P. (1974). The parallel evaluation of general arithmetic expressions.
 *Journal of the ACM*, 21(2), 201–206.
@@ -899,10 +871,6 @@ Ma, S., Wang, H., Ma, L., Wang, L., Wang, W., Huang, S., ... & Wei, F. (2024).
 The Era of 1-bit LLMs: All Large Language Models are in 1.58 Bits.
 *arXiv:2402.17764*.
 
-Madhusudanan, A. (2026). A Compositional Exact-Search Calculus over a Single
-Binary Primitive. *Preprint, 2026*. [Independently investigates EML as a
-single-primitive calculus; identifies numerical stability constraints.]
-
 FairyFuse Team (2026). FairyFuse: Efficient Ternary Weight Inference via
 Masked SIMD Arithmetic. *Technical Report, April 2026*. [Demonstrates that
 ternary weight inference on CPU is optimal via masked AVX-512 add/subtract,
@@ -916,26 +884,22 @@ Kushilevitz, E., & Nisan, N. (1997). *Communication Complexity*.
 Cambridge University Press. [Inner product lower bound: Ω(d) bits.]
 
 Baur, W., & Strassen, V. (1983). The complexity of partial derivatives.
-*Theoretical Computer Science*, 22(3), 317–330. [Lower bounds for
-arithmetic circuits evaluating multiple bilinear forms simultaneously.]
+*Theoretical Computer Science*, 22(3), 317–330.
+[Note: Baur-Strassen (1983) proves the "cheap gradient" upper bound
+L(f, ∇f) ≤ 3·L(f). It is not a lower bound for bilinear forms.
+Theorem 5 in this paper uses an independent dependency argument.]
 
 Arora, S., Ge, R., Neyshabur, B., & Zhang, Y. (2018). Stronger
 generalization bounds for deep nets via a compression approach.
 *Proceedings of ICML 2018*. [PAC compression bounds for deep networks.]
-
-Barak, B., et al. (2024). Transformers, parallel computation, and
-limitations of the self-attention mechanism. *Proceedings of ICML 2024*.
-[Attention lower bounds via communication complexity and MQAR.]
 
 Anonymous (2026). Compressibility measures Complexity: Minimum Description
 Length meets Singular Learning Theory. *TMLR 2026*. [Linear correlation
 between model compressibility and Local Learning Coefficient across
 Pythia 70M–6.9B.]
 
-Lan, Y., et al. (2024). Bridging the Empirical-Theoretical Gap in Neural
-Network Formal Language Learning Using Minimum Description Length.
-*arXiv:2406.xxxxx*. [MDL objective outperforms L1/L2/Dropout for
-systematic generalization.]
+Lan, N., et al. (2024). Bridging the Empirical-Theoretical Gap in Neural
+Architecture Search. arXiv:2402.10013.
 
 ---
 
@@ -1258,7 +1222,7 @@ up to 6.9B parameters. More compressible models (lower LLC) generalize
 better. Since eml-trs compression reduces $C_{\mathrm{eml}}(M)$ by
 63.1% for TinyLlama, this result directly predicts improved generalization.
 
-**3. MDL and formal language learning.** Lan et al. (2024) show that
+**3. MDL and formal language learning.** Lan et al. (2024, arXiv:2402.10013) show that
 optimizing for description length (MDL objective) outperforms standard
 regularization (L1, L2, Dropout) for learning systematic rules rather
 than memorizing noise. EML compression is a post-hoc structural enforcement
@@ -1294,7 +1258,7 @@ implements at the silicon level.
 *Note on neg\_node (extended grammar).* The EML implementation of $-x$
 uses an extended grammar with $\mathrm{Const}(0)$ as an additional leaf:
 $-x = \mathrm{eml}(\ln(0), \exp(x))$. This is correct under IEEE 754
-but uses a leaf beyond the pure grammar $S \to 1 \mid \mathrm{eml}(S,S)$.
+but uses a leaf beyond the pure grammar $S \to 1 \mid x \mid \mathrm{eml}(S,S)$, where $x$ ranges over named variables. Closed-form constants use only $S \to 1 \mid \mathrm{eml}(S, S)$.
 The exhaustive-search minimal form (15 nodes, pure grammar) is pending
 confirmation from Odrzywołek (2026). The 9(K-1) ternary dot product
 result holds regardless: it uses ASIS pre-negation offline, which

@@ -128,16 +128,38 @@ impl CostModel {
     }
 
     /// Cost of one TinyLlama layer — naive
-    /// Result from Deep Research: ~13,102 billion nodes
     pub fn tinyllama_layer_naive() -> u64 {
-        13_102_000_000_000
+        let d = 2048;
+        let d_ffn = 5632;
+        let n = 2048;
+        let h = 32;
+        let d_k = 64;
+
+        let projections = 3 * d * d * Self::dot_product_naive(d);
+        let attention = h * Self::attention_one_head(n, d_k);
+        let w_o = d * d * Self::dot_product_naive(d);
+        let ffn_up = 2 * d * d_ffn * Self::dot_product_naive(d);
+        let ffn_down = d * d_ffn * Self::dot_product_naive(d_ffn);
+        
+        (projections + attention + w_o + ffn_up + ffn_down) as u64
     }
 
     /// Cost of one TinyLlama layer — after optimization
-    /// CF + ASIS + DAG + boundary fusions
-    /// Result from Deep Research: ~4,838 billion nodes (63% reduction)
     pub fn tinyllama_layer_optimized() -> u64 {
-        4_838_000_000_000
+        let d = 2048;
+        let d_ffn = 5632;
+        let n = 2048;
+        let h = 32;
+        let d_k = 64;
+
+        let projections = 3 * d * d * Self::dot_product_cf_asis(d);
+        // Optimized attention (simplified estimate: 40% of naive)
+        let attention = (h * Self::attention_one_head(n, d_k)) * 40 / 100;
+        let w_o = d * d * Self::dot_product_cf_asis(d);
+        let ffn_up = 2 * d * d_ffn * Self::dot_product_cf_asis(d);
+        let ffn_down = d * d_ffn * Self::dot_product_cf_asis(d_ffn);
+        
+        (projections + attention + w_o + ffn_up + ffn_down) as u64
     }
 
     /// Total reduction for the entire layer
@@ -163,21 +185,33 @@ impl CostModel {
 
     /// Total reduction for each TinyLlama operation
     pub fn tinyllama_breakdown() -> Vec<(&'static str, f64, f64, f64)> {
-        // (operation, naive_B, opt_B, reduction_%)
+        let d = 2048.0;
+        let d_ffn = 5632.0;
+        let n = 2048.0;
+        let h = 32.0;
+        let d_k = 64.0;
+
+        // Scale factors to Billions (10^9)
+        let b = 1e9;
+
         vec![
-            ("RMSNorm×2",        34.0,   0.02,  99.9),
-            ("Projections Q,K,V",1855.3, 480.8, 74.1),
-            // seq=2048, d_k=64, n_heads=32
-            // 25 * 64 * 2048 * 32 = 104,857,600 ≈ 0.105B nodes
-            ("RoPE",             1.7,    0.105, 93.8),
-            ("Q@K^T",            306.6,  119.0, 61.2),
-            ("Log-Softmax",      4.69,   0.13,  97.2),
-            ("Attention@V",      309.1,  120.2, 61.1),
-            ("W_O proj",         618.3,  240.4, 61.1),
-            ("Residual×2",       0.15,   0.008, 94.6),
-            ("FFN W_gate,W_up",  6647.0, 2585.0,61.1),
-            ("SwiGLU",           1.53,   0.34,  77.7),
-            ("W_down",           3324.0, 1292.0,61.1),
+            ("RMSNorm×2",        0.00027, 0.00002, 92.6),
+            ("Projections Q,K,V", (3.0 * d * d * Self::dot_product_naive(d as usize) as f64) / b, 
+                                  (3.0 * d * d * Self::dot_product_cf_asis(d as usize) as f64) / b, 74.1),
+            ("RoPE",             0.1,    0.01, 90.0),
+            ("Q@K^T",            (h * n * n * Self::dot_product_naive(d_k as usize) as f64) / b,
+                                 (h * n * n * Self::dot_product_cf_asis(d_k as usize) as f64) / b, 61.2),
+            ("Log-Softmax",      (n * h * Self::softmax_dag(n as usize) as f64) / b,
+                                 (n * h * Self::log_softmax_dag(n as usize) as f64) / b, 20.0),
+            ("Attention@V",      (h * n * d_k * (n * 17.0 + (n - 1.0) * 19.0)) / b,
+                                 (h * n * d_k * (n * 17.0 + (n - 1.0) * 19.0) * 0.4) / b, 60.0),
+            ("W_O proj",         (d * d * Self::dot_product_naive(d as usize) as f64) / b,
+                                 (d * d * Self::dot_product_cf_asis(d as usize) as f64) / b, 61.1),
+            ("FFN W_gate,W_up",  (2.0 * d * d_ffn * Self::dot_product_naive(d as usize) as f64) / b,
+                                 (2.0 * d * d_ffn * Self::dot_product_cf_asis(d as usize) as f64) / b, 61.1),
+            ("SwiGLU",           (d_ffn * 67.0) / b, (d_ffn * 32.0) / b, 52.2),
+            ("W_down",           (d * d_ffn * Self::dot_product_naive(d_ffn as usize) as f64) / b,
+                                 (d * d_ffn * Self::dot_product_cf_asis(d_ffn as usize) as f64) / b, 61.1),
         ]
     }
 }
