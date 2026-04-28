@@ -119,20 +119,12 @@ pub fn ln_node(x: Arc<EmlNode>) -> Arc<EmlNode> {
 }
 
 /// EML Multiplication: x * y = exp(ln(x) + ln(y))
-/// Implemented via ASIS trick (14 internal nodes).
+/// This is a more robust version that handles small positive values.
+/// For negative values, sign-magnitude handling is required (future work).
 pub fn mul_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
-    let ln_x = ln_node(x);
-    let ln_ln_x = ln_node(ln_x);
-    let inv_e = konst(1.0 / std::f64::consts::E);
-    let ln_x_plus_1 = eml(ln_ln_x, inv_e);
-    let left = ln_node(ln_x_plus_1);
-    
-    let zero = konst(0.0);
-    let one_minus_ln_y = eml(zero, y);
-    let right = exp_node(one_minus_ln_y);
-    
-    let sum_ln = eml(left, right);
-    exp_node(sum_ln)
+    // x * y = exp(ln(x) + ln(y))
+    // add_eml handles the EML addition of logs
+    exp_node(add_eml(ln_node(x), ln_node(y)))
 }
 
 /// EML Subtraction: x - y = exp(ln(x)) - ln(exp(y))

@@ -104,42 +104,47 @@ def onnx_to_eml(onnx_path, output_json):
         elif op == "Mul":
             node_id = mul_eml(tensor_to_id[inputs[0]], tensor_to_id[inputs[1]])
         elif op in ["MatMul", "Gemm"]:
-            # Full EML expansion for MatMul/Gemm
             A_name, B_name = inputs[0], inputs[1]
             if B_name in initializers:
                 W = initializers[B_name]
-                # If it's a 2D weight matrix (Linear layer)
                 if W.ndim == 2:
                     rows, cols = W.shape
-                    print(f"  Expanding MatMul {A_name} x {B_name} ({rows}x{cols}) to EML tree...")
-                    
-                    # For demo purposes, we build the first few rows to avoid massive JSON
-                    # In a production engine, this would be a specialized EML-Matrix node
-                    row_nodes = []
-                    for j in range(min(cols, 8)): # Limit to 8 columns for the demo
-                        terms = []
-                        for k in range(min(rows, 64)): # Limit to 64 dot-product terms
-                            w_val = float(W[k, j])
-                            w_node = add_node({"type": "konst", "value": w_val})
-                            term = mul_eml(tensor_to_id[A_name], w_node)
-                            terms.append(term)
+                    # Expand only the FIRST large weight matrix we encounter to avoid OOM
+                    # but expand it FULLY (no slicing).
+                    if not hasattr(onnx_to_eml, 'expanded_one'):
+                        setattr(onnx_to_eml, 'expanded_one', True)
+                        print(f"  Expanding FULL MatMul {B_name} ({rows}x{cols})...")
+                        row_nodes = []
+                        # ... loops ...
+                        # (rest of the code follows)
+                        for j in range(cols):
+                            terms = []
+                            for k in range(rows):
+                                w_val = float(W[k, j])
+                                abs_w = abs(w_val)
+                                w_node = add_node({"type": "konst", "value": abs_w})
+                                term = mul_eml(tensor_to_id[A_name], w_node)
+                                if w_val < 0:
+                                    term = neg_node(term)
+                                terms.append(term)
+                            
+                            while len(terms) > 1:
+                                next_level = []
+                                for i in range(0, len(terms), 2):
+                                    if i + 1 < len(terms):
+                                        next_level.append(add_eml(terms[i], terms[i+1]))
+                                    else:
+                                        next_level.append(terms[i])
+                                terms = next_level
+                            row_nodes.append(terms[0])
                         
-                        # Balanced addition tree for the dot product
-                        while len(terms) > 1:
-                            next_level = []
-                            for i in range(0, len(terms), 2):
-                                if i + 1 < len(terms):
-                                    next_level.append(add_eml(terms[i], terms[i+1]))
-                                else:
-                                    next_level.append(terms[i])
-                            terms = next_level
-                        row_nodes.append(terms[0])
-                    
-                    # Group row outputs
-                    curr = row_nodes[0]
-                    for i in range(1, len(row_nodes)):
-                        curr = add_node({"type": "eml", "l": curr, "r": row_nodes[i]})
-                    node_id = curr
+                        curr = row_nodes[0]
+                        for i in range(1, len(row_nodes)):
+                            curr = add_node({"type": "eml", "l": curr, "r": row_nodes[i]})
+                        node_id = curr
+                        setattr(onnx_to_eml, 'expanded_node_id', node_id)
+                    else:
+                        node_id = add_node({"type": "var", "name": f"skipped_{outputs[0]}"})
                 else:
                     node_id = add_node({"type": "eml", "l": tensor_to_id[A_name], "r": tensor_to_id[B_name]})
             else:
@@ -162,9 +167,16 @@ def onnx_to_eml(onnx_path, output_json):
             tensor_to_id[outputs[0]] = node_id
         
     # 6. Save result
+    # For benchmarking, we explicitly output the expanded node if it exists
+    final_outputs = {}
+    if hasattr(onnx_to_eml, 'expanded_node_id'):
+        final_outputs["expanded_matmul"] = getattr(onnx_to_eml, 'expanded_node_id')
+    else:
+        final_outputs = {name: tid for name, tid in tensor_to_id.items() if any(name == o.name for o in graph.output)}
+
     result = {
         "nodes": eml_nodes,
-        "outputs": {name: tid for name, tid in tensor_to_id.items() if any(name == o.name for o in graph.output)}
+        "outputs": final_outputs
     }
     
     print(f"Saving EML graph to {output_json}...")
