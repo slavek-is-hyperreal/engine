@@ -24,7 +24,7 @@ use std::sync::Arc;
 /// NOTE: neg_node uses extended grammar (Const(0.0)).
 ///       Requires gate > 0 and up > 0 for mul_eml validity.
 ///       For negative inputs, use ALU backend.
-pub(crate) fn swiglu_fused(gate: Arc<EmlNode>, up: Arc<EmlNode>) -> Arc<EmlNode> {
+pub fn swiglu_fused(gate: Arc<EmlNode>, up: Arc<EmlNode>) -> Arc<EmlNode> {
     // Step 1: numerator = ln(gate * up)
     // mul_eml(gate, up) = exp(ln(gate) + ln(up)) — 17 internal nodes
     // ln_node(mul_eml(gate, up)) — wraps in ln: 3 more internal nodes

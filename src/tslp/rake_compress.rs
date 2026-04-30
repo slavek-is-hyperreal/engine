@@ -131,7 +131,7 @@ pub fn measure_rake_compress_improvement(root: Arc<EmlNode>) -> (usize, usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::*;
+    
     use crate::nn_layer::build_dot_product_eml;
 
     #[test]

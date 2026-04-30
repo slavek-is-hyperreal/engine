@@ -33,52 +33,56 @@ pub fn parallel_prefix_sum(terms: Vec<Arc<EmlNode>>) -> Arc<EmlNode> {
     add_eml(left, right)
 }
 
-/// Build a balanced parallel-prefix ASIS dot product.
+/// Build a balanced parallel-prefix dot product.
 ///
-/// Equivalent to build_dot_product_eml but with O(log K) depth.
+/// Uses `mul_cf` directly (5 nodes per term, O(log K) depth).
 ///
-/// weights: frozen (constant during inference)
-/// inputs: EML nodes representing activations
+/// **Domain**: requires `x > 1.0` so that `ln(ln(x))` is defined.
+/// This is satisfied for benchmark inputs (shifted activations, values > e).
+///
+/// **Production use** (arbitrary x range including x < 1): use
+/// `nn_layer::build_dot_product_eml`, which adds BIAS=4.0 per term.
+/// That function also uses `sum_balanced` so depth is identical O(log K),
+/// but each term has ~18 levels instead of ~8 due to the BIAS arithmetic.
 pub fn build_balanced_dot_product(
     inputs: &[Arc<EmlNode>],
     weights: &[f32],
 ) -> Arc<EmlNode> {
-    use crate::constant_fold::asis_preprocess_weights;
     assert_eq!(inputs.len(), weights.len());
     assert!(!inputs.is_empty());
-    
-    // We don't use asis_preprocess_weights here because we handle signs via tree structure
+
     let mut pos_terms = Vec::new();
     let mut neg_terms = Vec::new();
-    
+
     for (i, &w) in weights.iter().enumerate() {
         let x = inputs[i].clone();
         let abs_w = (w as f64).abs();
         if abs_w < 1e-15 { continue; }
-        
-        // Positive term: x * |w|
+
+        // mul_cf(x, abs_w) = eml(eml(ln(ln(x)), Const(1/abs_w)), One)
+        // Requires x > 1.0 (so ln(x) > 0 and ln(ln(x)) is real).
         let term = eml(eml(ln_node(ln_node(x)), konst(1.0 / abs_w)), one());
-        
+
         if w >= 0.0 {
             pos_terms.push(term);
         } else {
             neg_terms.push(term);
         }
     }
-    
+
     if neg_terms.is_empty() {
         return parallel_prefix_sum(pos_terms);
     }
     if pos_terms.is_empty() {
         return neg_node(parallel_prefix_sum(neg_terms));
     }
-    
+
     let sum_pos = parallel_prefix_sum(pos_terms);
     let sum_neg = parallel_prefix_sum(neg_terms);
-    
-    // Result = sum_pos - sum_neg
     sub_eml(sum_pos, sum_neg)
 }
+
+
 
 /// Build a naive, sequential left-to-right dot product tree.
 /// Depth will be O(K).

@@ -20,44 +20,69 @@ pub struct LayerOptResult {
 pub fn build_dot_product_eml(input: &[Arc<EmlNode>], weights: &[f32]) -> Arc<EmlNode> {
     assert_eq!(input.len(), weights.len());
     assert!(!input.is_empty());
-    
-    // We don't need ASIS pre-negation if we use a true addition tree.
-    // mul_cf handles the weight sign correctly.
-    fn mul_cf(x: Arc<EmlNode>, w: f64) -> Arc<EmlNode> {
-        if w.abs() < 1e-15 { return konst(0.0); }
-        // EML multiplication identity: w*x = exp(ln(x) + ln(w))
-        // Our EML is exp(x) - ln(y).
-        // w*x = eml(eml(ln(ln(x)), konst(1.0/w)), one())
-        eml(eml(ln_node(ln_node(x)), konst(1.0 / w)), one())
+
+    // sub_eml(a, b) = a - b  [requires a > 0 for ln(a)]
+    fn sub_eml_local(a: Arc<EmlNode>, b: Arc<EmlNode>) -> Arc<EmlNode> {
+        eml(ln_node(a), exp_node(b))
     }
-    
-    fn sub_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
-        eml(ln_node(x), exp_node(y))
+    // add_eml(a, b) = a + b  [requires a > 0]
+    fn add_eml_local(a: Arc<EmlNode>, b: Arc<EmlNode>) -> Arc<EmlNode> {
+        sub_eml_local(a, neg_node(b))
     }
 
-    fn add_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
-        // x + y = x - (0 - y)
-        sub_eml(x, sub_eml(konst(0.0), y))
+    // mul_cf_safe: |w| * x  (x > -1.0)
+    // BIAS=4.0 ensures ln(x+BIAS) > ln(3) > 1.0, so ln(ln(x+BIAS)) is stable.
+    fn mul_cf_positive(x: Arc<EmlNode>, abs_w: f64) -> Arc<EmlNode> {
+        const BIAS: f64 = 4.0;
+        if abs_w < 1e-15 { return konst(0.0); }
+
+        let x_shifted = add_eml_local(x, konst(BIAS));
+        let scaled = mul_cf(x_shifted, abs_w);
+        let bias_correction = konst(abs_w * BIAS);
+        sub_eml_local(scaled, bias_correction)
     }
 
-    let mut terms: Vec<Arc<EmlNode>> = input.iter().zip(weights.iter())
-        .map(|(x, &w)| mul_cf(x.clone(), w as f64))
-        .collect();
+    let mut pos_terms = Vec::new();
+    let mut neg_terms = Vec::new();
 
-    // Balanced tree reduction
-    while terms.len() > 1 {
-        let mut next_terms = Vec::new();
-        for i in (0..terms.len()).step_by(2) {
-            if i + 1 < terms.len() {
-                next_terms.push(add_eml(terms[i].clone(), terms[i + 1].clone()));
-            } else {
-                next_terms.push(terms[i].clone());
-            }
+    for (x, &w) in input.iter().zip(weights.iter()) {
+        let abs_w = (w as f64).abs();
+        if abs_w < 1e-15 { continue; }
+        
+        let term = mul_cf_positive(x.clone(), abs_w);
+        if w >= 0.0 {
+            pos_terms.push(term);
+        } else {
+            neg_terms.push(term);
         }
-        terms = next_terms;
     }
-    
-    terms[0].clone()
+
+    fn sum_balanced(mut terms: Vec<Arc<EmlNode>>) -> Arc<EmlNode> {
+        if terms.is_empty() { return konst(0.0); }
+        while terms.len() > 1 {
+            let mut next = Vec::new();
+            for i in (0..terms.len()).step_by(2) {
+                if i + 1 < terms.len() {
+                    next.push(add_eml_local(terms[i].clone(), terms[i + 1].clone()));
+                } else {
+                    next.push(terms[i].clone());
+                }
+            }
+            terms = next;
+        }
+        terms[0].clone()
+    }
+
+    let pos_sum = sum_balanced(pos_terms);
+    let neg_sum = sum_balanced(neg_terms);
+
+    if neg_sum.as_ref() == &EmlNode::Const(0.0) {
+        pos_sum
+    } else if pos_sum.as_ref() == &EmlNode::Const(0.0) {
+        neg_node(neg_sum)
+    } else {
+        sub_eml_local(pos_sum, neg_sum)
+    }
 }
 
 

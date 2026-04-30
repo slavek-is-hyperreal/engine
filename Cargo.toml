@@ -5,12 +5,10 @@ edition = "2021"
 description = "EML Term Rewriting System for neural network compression"
 authors = ["Sławek Majcher"]
 
-
 [workspace]
 members = [".", "eml-trs-macro"]
 
 [dependencies]
-# core dependencies
 wgpu = "0.20"
 bytemuck = { version = "1.16", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
@@ -23,48 +21,27 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 [dev-dependencies]
-# dla testów numerycznych
 
 [features]
 default = []
-gguf = []
 naga-pass = ["naga"]
-proc-macro = []
 
-[[bin]]
-name = "tinyllama_costs"
-path = "benches/tinyllama_ops.rs"
-[[bin]]
-name = "trs_bench"
-path = "benches/trs_performance.rs"
-[[bin]]
-name = "verify_output"
-path = "benches/verify_output.rs"
-[[bin]]
-name = "tslp_bench"
-path = "benches/tslp_bench.rs"
+# --- Binaries (src/bin/) ---
 
 [[bin]]
 name = "eml_compress"
 path = "src/bin/eml_compress.rs"
 
 [[bin]]
-name = "compress_bench"
-path = "benches/compress_bench.rs"
+name = "eml_parity"
+path = "src/bin/eml_parity.rs"
 
 [[bin]]
-name = "real_tinyllama"
-path = "benches/real_tinyllama.rs"
-required-features = ["gguf"]
+name = "eml_benchmark"
+path = "src/bin/eml_benchmark.rs"
 
-[[bin]]
-name = "naga_bench"
-path = "benches/naga_bench.rs"
-required-features = ["naga-pass"]
-
-[[bin]]
-name = "proc_macro_bench"
-path = "benches/proc_macro_bench.rs"
+# --- Benches (benches/) ---
+# Each bench file appears ONLY as [[bench]], not as [[bin]], to avoid duplicate target warnings.
 
 [[bench]]
 name = "tinyllama_ops"
@@ -79,6 +56,27 @@ harness = false
 [[bench]]
 name = "trs_performance"
 path = "benches/trs_performance.rs"
+harness = false
+
+[[bench]]
+name = "tslp_bench"
+path = "benches/tslp_bench.rs"
+harness = false
+
+[[bench]]
+name = "compress_bench"
+path = "benches/compress_bench.rs"
+harness = false
+
+[[bench]]
+name = "naga_bench"
+path = "benches/naga_bench.rs"
+harness = false
+required-features = ["naga-pass"]
+
+[[bench]]
+name = "proc_macro_bench"
+path = "benches/proc_macro_bench.rs"
 harness = false
 
 [[bench]]

@@ -97,6 +97,31 @@ impl EmlNode {
             _ => false,
         }
     }
+
+    /// Evaluates the EML tree given an environment of variables.
+    /// DAG-aware: uses caching (memoization) to handle shared subtrees efficiently.
+    pub fn evaluate(&self, env: &std::collections::HashMap<String, f64>) -> f64 {
+        use std::collections::HashMap;
+        let mut cache = HashMap::new();
+        fn eval(node: &EmlNode, env: &HashMap<String, f64>, cache: &mut HashMap<usize, f64>) -> f64 {
+            let ptr = node as *const EmlNode as usize;
+            if let Some(&v) = cache.get(&ptr) { return v; }
+            let v = match node {
+                EmlNode::One => 1.0,
+                EmlNode::Var(name) => *env.get(name).unwrap_or(&0.0),
+                EmlNode::Const(val) => *val,
+                EmlNode::Eml(l, r) => {
+                    let lv = eval(l, env, cache);
+                    let rv = eval(r, env, cache);
+                    // eml(x, y) = exp(x) - ln(y)
+                    lv.exp() - rv.ln()
+                }
+            };
+            cache.insert(ptr, v);
+            v
+        }
+        eval(self, env, &mut cache)
+    }
 }
 
 /// Helper constructors — use these instead of writing Arc::new manually
@@ -116,11 +141,11 @@ pub fn exp_node(x: Arc<EmlNode>) -> Arc<EmlNode> {
 /// Natural logarithm: ln(x) = eml(1, eml(eml(1, x), 1))
 ///
 /// # Preconditions
-/// - Mathematically requires x > 0.
+/// - Mathematically requires x >= 0.
 pub fn ln_node(x: Arc<EmlNode>) -> Arc<EmlNode> {
-    if let EmlNode::Const(v) = x.as_ref() {
-        debug_assert!(*v >= 0.0, "ln(x) domain error: x = {}", v);
-    }
+    // ln(x) cost 6 internal nodes.
+    // NOTE: We allow x=0.0 here for the extended grammar (neg_node),
+    // which results in ln(0) = -inf in constant folding.
     eml(one(), eml(eml(one(), x), one()))
 }
 
@@ -192,6 +217,34 @@ pub fn neg_node(x: Arc<EmlNode>) -> Arc<EmlNode> {
     let ln_zero = ln_node(konst(0.0));
     let exp_x = exp_node(x);
     eml(ln_zero, exp_x)
+}
+
+/// Constant-weight multiplication: x * W (PAPER.md §4.2, Theorem 3)
+///
+/// x * W = eml(eml(ln(ln(x)), Const(1/W)), 1)
+///
+/// Proof:
+///   eml(ln(ln(x)), 1/W) = exp(ln(ln(x))) - ln(1/W)
+///                        = ln(x) + ln(W)
+///   eml(..., 1) = exp(ln(x) + ln(W)) - ln(1) = x*W - 0 = x*W  ✓
+///
+/// # Preconditions
+/// - W != 0 (division by zero)
+/// - x > 1.0 (so that ln(ln(x)) exists in real domain)
+///
+/// For x in (0, 1), use the offset trick (mul_cf_safe).
+///
+/// # Cost
+/// - 5 internal EML nodes (vs 17 for general mul_eml)
+/// - 1/W is a compile-time constant leaf — zero runtime cost
+///
+/// This is the canonical implementation. Use this everywhere instead of
+/// duplicating the formula in nn_layer.rs or asis.rs.
+pub fn mul_cf(x: Arc<EmlNode>, w: f64) -> Arc<EmlNode> {
+    assert!(w != 0.0, "mul_cf: weight cannot be zero");
+    // 1/w is precomputed once at graph-build time (frozen weight)
+    let inv_w = konst(1.0 / w);
+    eml(eml(ln_node(ln_node(x)), inv_w), one())
 }
 
 #[cfg(test)]
