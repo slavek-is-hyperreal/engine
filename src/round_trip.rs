@@ -336,11 +336,14 @@ pub fn round_trip_optimize(node: Arc<EmlNode>) -> Arc<EmlNode> {
     rewrite(node)
 }
 
-/// Round-trip + lower: returns the flat op sequence
+/// Round-trip + lower: returns the flat op sequence.
+/// NOTE: We lower BEFORE round_trip_optimize because TRS left_absorb destroys
+/// the mul_cf pattern: eml(ln(exp(inner)), y) → eml(inner, y) fires on
+/// sub_eml_local(mul_cf(x,w), c) and breaks MulConst recognition.
 pub fn compile_to_ops(node: Arc<EmlNode>) -> FlatProgram {
-    let optimized = round_trip_optimize(node);
-    lower_to_flat_ops(&optimized)
+    lower_to_flat_ops(&node)
 }
+
 
 fn apply_rules_bottom_up(node: Arc<EmlNode>, rules: &[RoundTripRule]) -> Arc<EmlNode> {
     let node = if let EmlNode::Eml(l, r) = node.as_ref() {
