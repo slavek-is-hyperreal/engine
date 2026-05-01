@@ -1,0 +1,27 @@
+   Compiling eml-trs v0.1.0 (/my_data/engine)
+warning: variable does not need to be mutable
+  --> src/bin/full_layer_unified.rs:61:9
+   |
+61 |     let mut integrate_matrix = |dag: &mut EmlDag, name: &str, weights: &Vec<Vec<f32>>, inputs: &Vec...
+   |         ----^^^^^^^^^^^^^^^^
+   |         |
+   |         help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `eml-trs` (bin "full_layer_unified") generated 1 warning (run `cargo fix --bin "full_layer_unified" -p eml-trs` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 0.97s
+     Running `/vectorlegis_ssd_pool/engine_target/release/full_layer_unified`
+=== EML 1:1 UNIFIED GLOBAL DAG AUDIT (TinyLlama-1.1B Layer 0) ===
+Strategy: Single Unified DAG for all 51,000,000 parameters.
+Engine: Optimized u64 Hashing.
+
+Loaded 374MB weights in 5.40230125s
+Auditing RMSNorm (Fusion 3)...
+  Norm attn_norm integrated.
+  Norm ffn_norm integrated.
+Integrating matrix: q          (2048 rows)...
+  Progress: 1024/2048 (Unique nodes: 25914271)
+Integrating matrix: k          (256 rows)...
+Integrating matrix: v          (256 rows)...
+Integrating matrix: o          (2048 rows)...

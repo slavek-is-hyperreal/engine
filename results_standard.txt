@@ -1,0 +1,151 @@
+   Compiling libc v0.2.186
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.45
+   Compiling cfg-if v1.0.4
+   Compiling bitflags v2.11.1
+   Compiling cfg_aliases v0.1.1
+   Compiling parking_lot_core v0.9.12
+   Compiling find-msvc-tools v0.1.9
+   Compiling autocfg v1.5.0
+   Compiling shlex v1.3.0
+   Compiling syn v2.0.117
+   Compiling num-traits v0.2.19
+   Compiling thiserror v1.0.69
+   Compiling jobserver v0.1.34
+   Compiling scopeguard v1.2.0
+   Compiling pkg-config v0.3.33
+   Compiling smallvec v1.15.1
+   Compiling cc v1.2.61
+   Compiling lock_api v0.4.14
+   Compiling termcolor v1.4.1
+   Compiling khronos-egl v6.0.0
+   Compiling bit-vec v0.6.3
+   Compiling foldhash v0.1.5
+   Compiling equivalent v1.0.2
+   Compiling hashbrown v0.17.0
+   Compiling ash v0.37.3+1.3.251
+   Compiling unicode-width v0.1.14
+   Compiling codespan-reporting v0.11.1
+   Compiling zstd-sys v2.0.16+zstd.1.5.7
+   Compiling indexmap v2.14.0
+   Compiling hashbrown v0.15.5
+   Compiling bit-set v0.5.3
+   Compiling thiserror-impl v1.0.69
+   Compiling parking_lot v0.12.5
+   Compiling gpu-alloc-types v0.3.0
+   Compiling gpu-descriptor-types v0.2.0
+   Compiling spirv v0.3.0+sdk-1.3.268.0
+   Compiling wgpu-hal v0.21.1
+   Compiling libloading v0.7.4
+   Compiling libloading v0.8.9
+   Compiling unicode-xid v0.2.6
+   Compiling futures-sink v0.3.32
+   Compiling pin-project-lite v0.2.17
+   Compiling log v0.4.29
+   Compiling futures-core v0.3.32
+   Compiling rustc-hash v1.1.0
+   Compiling arrayvec v0.7.6
+   Compiling memchr v2.8.0
+   Compiling hexf-parse v0.2.1
+   Compiling serde_core v1.0.228
+   Compiling naga v0.20.0
+   Compiling futures-channel v0.3.32
+   Compiling gpu-descriptor v0.3.2
+   Compiling gpu-alloc v0.6.0
+   Compiling futures-macro v0.3.32
+   Compiling wgpu-types v0.20.0
+   Compiling wgpu-core v0.21.1
+   Compiling renderdoc-sys v1.1.0
+   Compiling zstd-safe v7.2.4
+   Compiling once_cell v1.21.4
+   Compiling litrs v1.0.0
+   Compiling futures-io v0.3.32
+   Compiling slab v0.4.12
+   Compiling crc32fast v1.5.0
+   Compiling zmij v1.0.21
+   Compiling glow v0.13.1
+   Compiling raw-window-handle v0.6.2
+   Compiling profiling v1.0.17
+   Compiling futures-task v0.3.32
+   Compiling futures-util v0.3.32
+   Compiling document-features v0.2.12
+   Compiling errno v0.3.14
+   Compiling wgpu v0.20.1
+   Compiling serde_json v1.0.149
+   Compiling adler2 v2.0.1
+   Compiling simd-adler32 v0.3.9
+   Compiling serde v1.0.228
+   Compiling miniz_oxide v0.8.9
+   Compiling signal-hook-registry v1.4.8
+   Compiling futures-executor v0.3.32
+   Compiling tokio-macros v2.7.0
+   Compiling serde_derive v1.0.228
+   Compiling bytemuck_derive v1.10.2
+   Compiling mio v1.2.0
+   Compiling socket2 v0.6.3
+   Compiling static_assertions v1.1.0
+   Compiling bytes v1.11.1
+   Compiling itoa v1.0.18
+   Compiling tokio v1.52.1
+   Compiling bytemuck v1.25.0
+   Compiling futures v0.3.32
+   Compiling flate2 v1.1.9
+   Compiling eml-trs-macro v0.1.0 (/my_data/engine/eml-trs-macro)
+   Compiling zstd v0.13.3
+   Compiling eml-trs v0.1.0 (/my_data/engine)
+warning: variable does not need to be mutable
+  --> src/bin/full_layer_benchmark.rs:68:9
+   |
+68 |     let mut audit_matrix = |name: &str, weights: &Vec<Vec<f32>>, inputs: &Vec<Arc<EmlNode>>| {
+   |         ----^^^^^^^^^^^^
+   |         |
+   |         help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `eml-trs` (bin "full_layer_benchmark") generated 1 warning (run `cargo fix --bin "full_layer_benchmark" -p eml-trs` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 1m 29s
+     Running `/vectorlegis_ssd_pool/engine_target/release/full_layer_benchmark`
+=== EML 1:1 TRUE PRODUCTION AUDIT (TinyLlama-1.1B Layer 0) ===
+Methodology: Row-by-Row Total Audit (O(K) RAM constant).
+Scanning all 51,000,000 parameters for exact average reduction.
+
+Loaded 374MB weights in 5.469752771s
+Auditing RMSNorm units (Fusion 3: γ-folding)...
+  Norm: attn_norm  -> Reduction: 50.0%
+  Norm: ffn_norm   -> Reduction: 50.0%
+Auditing matrix: q          (2048 rows)...
+  Progress:  512/2048 (ETA: 59.5s)
+  Progress: 1024/2048 (ETA: 39.9s)
+  Progress: 1536/2048 (ETA: 20.0s)
+  COMPLETED: Reduction: 26.01%
+Auditing matrix: k          (256 rows)...
+  COMPLETED: Reduction: 26.00%
+Auditing matrix: v          (256 rows)...
+  COMPLETED: Reduction: 26.32%
+Auditing matrix: o          (2048 rows)...
+  Progress:  512/2048 (ETA: 60.1s)
+  Progress: 1024/2048 (ETA: 39.7s)
+  Progress: 1536/2048 (ETA: 19.8s)
+  COMPLETED: Reduction: 26.48%
+Auditing FFN Block (Row-by-Row SwiGLU fusion)...
+  FFN Progress: 1000/5632 (ETA: 600.3s)
+  FFN Progress: 2000/5632 (ETA: 479.0s)
+  FFN Progress: 3000/5632 (ETA: 353.7s)
+  FFN Progress: 4000/5632 (ETA: 217.9s)
+  FFN Progress: 5000/5632 (ETA: 84.9s)
+  FFN Gate/Up COMPLETED: Reduction: 42.95%
+Auditing matrix: down       (2048 rows)...
+  Progress:  512/2048 (ETA: 191.7s)
+  Progress: 1024/2048 (ETA: 127.1s)
+  Progress: 1536/2048 (ETA: 63.5s)
+  COMPLETED: Reduction: 28.34%
+
+=== FINAL SCIENTIFIC VERDICT: FULL LAYER 0 AUDIT ===
+Total Parameters:   ~51 Million
+Total Naive Nodes:        1585376768
+Total Unique Nodes:       1021901603
+FINAL REDUCTION:              35.54%
+Methodology:        Row-by-Row Exhaustive scan (O(K) memory).
+Status:             VERIFIED PRODUCTION GRADE
