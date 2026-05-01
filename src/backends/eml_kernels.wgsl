@@ -121,15 +121,29 @@ fn log_softmax(
     let n = arrayLength(&logits);
     let tid = lid.x;
     
-    // Step 1: Compute Σ exp(x_j) via parallel reduction
+    // Step 1: Compute max(x_j) for numerical stability
+    var local_max = -1e38f;
+    for (var i = tid; i < n; i += 64u) {
+        local_max = max(local_max, logits[i]);
+    }
+    shared_sum[tid] = local_max;
+    workgroupBarrier();
+    for (var stride = 32u; stride > 0u; stride >>= 1u) {
+        if (tid < stride) {
+            shared_sum[tid] = max(shared_sum[tid], shared_sum[tid + stride]);
+        }
+        workgroupBarrier();
+    }
+    let shift = shared_sum[0];
+    workgroupBarrier();
+
+    // Step 2: Compute Σ exp(x_j - shift) via parallel reduction
     var local_sum = 0.0f;
     for (var i = tid; i < n; i += 64u) {
-        local_sum += fast_exp(logits[i]);
+        local_sum += fast_exp(logits[i] - shift);
     }
     shared_sum[tid] = local_sum;
     workgroupBarrier();
-    
-    // Parallel reduction in shared memory
     for (var stride = 32u; stride > 0u; stride >>= 1u) {
         if (tid < stride) {
             shared_sum[tid] += shared_sum[tid + stride];
@@ -137,11 +151,11 @@ fn log_softmax(
         workgroupBarrier();
     }
     
-    // Step 2: log_softmax(x_i) = x_i - ln(S) = eml(ln(x_i), S)
-    // This is one EML node per element
-    let log_sum_exp = fast_ln(shared_sum[0]);
+    // Step 3: log_softmax(x_i) = x_i - ln(S) [valid for any real x_i]
+    let log_sum_exp = fast_ln(shared_sum[0]) + shift;
     
     for (var i = tid; i < n; i += 64u) {
         out_softmax[i] = logits[i] - log_sum_exp;
     }
 }
+

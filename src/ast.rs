@@ -180,12 +180,10 @@ pub fn sub_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
 /// # Preconditions
 /// - Requires x > 0 due to internal ln(x).
 pub fn add_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
-    if let EmlNode::Const(v) = x.as_ref() {
-        debug_assert!(*v > 0.0, "add_eml domain error: x = {}", v);
-    }
-    // x + y = eml(ln(x), exp(eml(ln(0), exp(y))))
-    eml(ln_node(x), exp_node(eml(ln_node(konst(0.0)), exp_node(y))))
+    // x + y = x - (-y)
+    sub_eml(x, neg_node(y))
 }
+
 
 /// Negation in EML: -x = 15 nodes
 /// Construction from exhaustive search
@@ -215,6 +213,7 @@ pub fn add_eml(x: Arc<EmlNode>, y: Arc<EmlNode>) -> Arc<EmlNode> {
 pub fn neg_node(x: Arc<EmlNode>) -> Arc<EmlNode> {
     // eml(ln(0), exp(x)) = 0 - x = -x
     let ln_zero = ln_node(konst(0.0));
+
     let exp_x = exp_node(x);
     eml(ln_zero, exp_x)
 }

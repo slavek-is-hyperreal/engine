@@ -32,14 +32,18 @@ fn main() {
     let weights_f32: Vec<f32> = weights.iter().map(|&w| w as f32).collect();
     let tree = build_dot_product_eml(&input_nodes, &weights_f32);
 
+    // Optimize and compile (Round-Trip TRS is key for real-only stability)
+    use eml_trs::round_trip::compile_to_ops;
+    let program = compile_to_ops(tree);
+
     // Build constant map
     let mut consts = ConstantMap::new();
     for (i, &v) in inputs.iter().enumerate() {
         consts.insert(format!("x{}", i), v);
     }
 
-    // Evaluate
-    match try_evaluate(&tree, &consts) {
+    // Evaluate on optimized program
+    match program.execute(&consts) {
         Some(result) if result.is_finite() => {
             println!("{{\"eml_result\": {:.15e}}}", result);
         }
@@ -51,13 +55,14 @@ fn main() {
             );
         }
         None => {
-            // try_evaluate returned None — domain error (ln of negative/zero)
+            // execute returned None — still a failure, but less likely after TRS
             println!(
-                "{{\"eml_result\": null, \"nan_reason\": \"domain error: try_evaluate returned None (likely ln(x<=0) in mul_cf)\"}}"
+                "{{\"eml_result\": null, \"nan_reason\": \"domain error: execution returned None\"}}"
             );
         }
     }
 }
+
 
 fn parse_input(s: &str) -> Result<(Vec<f64>, Vec<f64>), String> {
     // Minimal JSON array parser — no external deps

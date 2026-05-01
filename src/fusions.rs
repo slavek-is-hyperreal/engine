@@ -64,7 +64,7 @@ pub fn swiglu_fused(gate: Arc<EmlNode>, up: Arc<EmlNode>) -> Arc<EmlNode> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::constant_fold::{try_evaluate, ConstantMap};
+    use crate::constant_fold::ConstantMap;
 
     #[test]
     fn test_swiglu_fused_structure() {
@@ -96,13 +96,16 @@ mod tests {
 
         let expected = gate_v * up_v / (1.0 + (-gate_v).exp());
 
-        let result = try_evaluate(&fused, &c)
+        use crate::round_trip::compile_to_ops;
+        let program = compile_to_ops(fused);
+        let result = program.execute(&c)
             .expect("Should evaluate for gate > e (SwiGLU correctness)");
             
         assert!(
             (result - expected).abs() < 1e-6,
             "SwiGLU mismatch: expected {:.8}, got {:.8}", expected, result
         );
+
     }
 }
 

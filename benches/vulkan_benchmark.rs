@@ -38,7 +38,7 @@ async fn main() {
     let cpu_time = t_cpu.elapsed().as_secs_f64() * 1000.0;
     
     // GPU EML kernel
-    let kernel = EmlKernel::new().await;
+    let kernel = EmlKernel::new().await.expect("Failed to initialize GPU backend");
     
     // Warmup
     let _ = kernel.run_log_softmax(&logits).await;

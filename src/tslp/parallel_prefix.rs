@@ -125,7 +125,7 @@ pub fn measure_depth_improvement(k: usize) -> (usize, usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::constant_fold::{try_evaluate, ConstantMap};
+    use crate::constant_fold::ConstantMap;
 
     #[test]
     fn test_parallel_prefix_depth_k64() {
@@ -169,13 +169,16 @@ mod tests {
             c.insert(format!("x{}", i), v);
         }
         
-        let result = try_evaluate(&tree, &c)
+        use crate::round_trip::compile_to_ops;
+        let program = compile_to_ops(tree);
+        let result = program.execute(&c)
             .expect("Should evaluate for positive inputs (K=4 correctness)");
             
         let diff = (result - expected).abs();
         // Tolerance for reordering-induced float differences
         assert!(diff < 1e-6,
             "Expected {:.8}, got {:.8}, diff {:.2e}", expected, result, diff);
+
     }
 
     #[test]

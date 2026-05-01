@@ -34,17 +34,14 @@ float fast_ln(float x) {
 
 // Główny operator EML: eml(x, y) = exp(x) - ln(y)
 float eml_op(float x, float y) {
-    // TODO: Dodać redukcję zakresu dla exp/ln jeśli wartości wykroczą poza [1, 2]
-    // Na razie implementacja naiwna pod weryfikację parytetu
-    return exp(x) - log(y); 
+    return fast_exp(x) - fast_ln(y); 
 }
 
 // Bezpieczne mnożenie przez stałą (mul_cf_safe z Offset Trick)
 float eml_mul_cf(float x, float w, float bias) {
-    // x_shifted = x + bias
-    // Tu implementujemy logikę: exp(ln(x+bias) + ln(w)) - w*bias
     float x_shifted = x + bias;
-    float scaled = exp(log(x_shifted) + log(abs(w)));
+    float scaled = fast_exp(fast_ln(x_shifted) + fast_ln(abs(w)));
     float result = scaled - (abs(w) * bias);
     return (w < 0.0) ? -result : result;
 }
+

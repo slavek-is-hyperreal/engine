@@ -116,7 +116,7 @@ pub fn build_and_optimize_sample(weights: &[f32], sample_k: usize) -> LayerOptRe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::constant_fold::{try_evaluate, ConstantMap};
+    use crate::constant_fold::ConstantMap;
 
     #[test]
     fn test_preprocess_wq_offline() {
@@ -145,33 +145,22 @@ mod tests {
     }
 
     #[test]
-    fn test_correctness_positive() {
-        let weights = vec![0.5f32, 0.3, 0.7, 0.2];
+    fn test_correctness_numerical() {
+        let weights = vec![0.5f32, -0.3, 0.7, -0.2];
         let xv = vec![1.5f64, 2.0, 0.8, 3.1];
         let expected: f64 = xv.iter().zip(weights.iter()).map(|(x,w)| x*(*w as f64)).sum();
         let input: Vec<Arc<EmlNode>> = (0..4).map(|i| var(&format!("x{}",i))).collect();
         let tree = build_dot_product_eml(&input, &weights);
+        
         let mut c = ConstantMap::new();
         for (i,&v) in xv.iter().enumerate() { c.insert(format!("x{}",i), v); }
-        if let Some(v) = try_evaluate(&tree, &c) {
-            assert!((v - expected).abs() < 1e-3, "expected={} got={}", expected, v);
-        }
-        // None is OK for negative intermediate values
+        
+        use crate::round_trip::compile_to_ops;
+        let program = compile_to_ops(tree);
+        let v = program.execute(&c).expect("Optimized evaluation should not fail");
+        assert!((v - expected).abs() < 1e-3, "expected={} got={}", expected, v);
     }
 
-    #[test]
-    fn test_negative_weights_limitation() {
-        // Documents known limitation: None for negative weights
-        let weights = vec![0.5f32, -0.3, 0.7, -0.2];
-        let xv = vec![1.0f64, 2.0, 3.0, 4.0];
-        let input: Vec<Arc<EmlNode>> = (0..4).map(|i| var(&format!("x{}",i))).collect();
-        let tree = build_dot_product_eml(&input, &weights);
-        let mut c = ConstantMap::new();
-        for (i,&v) in xv.iter().enumerate() { c.insert(format!("x{}",i), v); }
-        let r = try_evaluate(&tree, &c);
-        println!("Negative weights -> {:?} (None is expected)", r);
-        // We don't assert None because it depends on intermediate values
-    }
 
     #[test]
     fn test_build_and_optimize_sample() {

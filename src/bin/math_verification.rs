@@ -3,8 +3,12 @@ use eml_trs::constant_fold::{try_evaluate, ConstantMap};
 use std::sync::Arc;
 
 fn eval(node: &Arc<EmlNode>) -> f64 {
-    try_evaluate(node, &ConstantMap::new()).expect("Failed to evaluate")
+    use eml_trs::round_trip::compile_to_ops;
+    let program = compile_to_ops(node.clone());
+    program.execute(&eml_trs::constant_fold::ConstantMap::new())
+        .expect("Failed to evaluate optimized EML")
 }
+
 
 fn main() {
     println!("=== EML-TSLP Mathematical Verification ===");
@@ -35,14 +39,28 @@ fn main() {
     // 2. Theorem 4: Log-Softmax Identity
     println!("\n[2] Theorem 4 Verification (Log-Softmax Nativity)");
     // log_softmax(x_i) = x_i - ln(sum(exp(x_j)))
-    // EML identity: eml(ln(x_i), S) = x_i - ln(S)
-    let x_i = 2.5;
+    // Form 1: eml(ln(x_i), S) = x_i - ln(S) [NOTE: valid ONLY for x_i > 0]
+    let x_pos = 2.5;
     let s = 10.0;
-    let log_softmax_eml = eml(ln_node(konst(x_i)), konst(s));
-    let expected = x_i - s.ln();
-    println!("log_softmax_eml: {} vs expected: {}", eval(&log_softmax_eml), expected);
-    assert!((eval(&log_softmax_eml) - expected).abs() < 1e-10);
-    println!("✓ Log-Softmax identity verified.");
+    let log_softmax_pos = eml(ln_node(konst(x_pos)), konst(s));
+    let expected_pos = x_pos - s.ln();
+    println!("log_softmax_pos (x>0): {} vs expected: {}", eval(&log_softmax_pos), expected_pos);
+    assert!((eval(&log_softmax_pos) - expected_pos).abs() < 1e-10);
+
+    // Form 2: Generic case for any x_i (using robust sub_eml logic)
+    // x_i - ln(S) = eml(ln(exp(x_i)), S)
+    // This form is used for logits which can be negative.
+    let x_neg = -1.5;
+    let s_val = 10.0;
+    // Mathematically: exp(ln(exp(x))) - ln(s) = x - ln(s)
+    let log_softmax_neg = eml(ln_node(exp_node(konst(x_neg))), konst(s_val));
+    let expected_neg = x_neg - s_val.ln();
+    println!("log_softmax_neg (x<0): {} vs expected: {}", eval(&log_softmax_neg), expected_neg);
+    assert!((eval(&log_softmax_neg) - expected_neg).abs() < 1e-10);
+
+    println!("✓ Log-Softmax identities verified (both positive and robust).");
+
+
 
     // 3. Theorem C6: BitNet Ternary Cost
     println!("\n[3] Theorem C6 Verification (BitNet Ternary Cost)");

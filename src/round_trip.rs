@@ -71,9 +71,10 @@ impl FlatProgram {
                 FlatOp::Exp(a) => slots[*a].exp(),
                 FlatOp::Ln(a) => {
                     let v = slots[*a];
-                    if v <= 0.0 { return None; }
-                    v.ln()
+                    if v < 0.0 { return None; }
+                    if v == 0.0 { f64::NEG_INFINITY } else { v.ln() }
                 }
+
                 FlatOp::MulConst(a, c) => slots[*a] * c,
             };
             slots.push(v);
@@ -328,21 +329,40 @@ pub fn get_round_trip_rules() -> Vec<RoundTripRule> {
 }
 
 /// Full round-trip optimization:
-/// TRS → classical identities → TRS → lower to flat ops
+/// Applies classical identities and fusions without aggressive TRS.
 pub fn round_trip_optimize(node: Arc<EmlNode>) -> Arc<EmlNode> {
+    // Stage 1: Initial rewrite to clean up obvious ln(exp) etc.
     let node = rewrite(node);
+    
+    // Stage 2: Apply round-trip specific rules (bottom-up)
     let rules = get_round_trip_rules();
     let node = apply_rules_bottom_up(node, &rules);
+    
+    // Stage 3: Final rewrite to fix any new opportunities created by RT rules
     rewrite(node)
 }
 
+
+
+
+
 /// Round-trip + lower: returns the flat op sequence.
-/// NOTE: We lower BEFORE round_trip_optimize because TRS left_absorb destroys
-/// the mul_cf pattern: eml(ln(exp(inner)), y) → eml(inner, y) fires on
-/// sub_eml_local(mul_cf(x,w), c) and breaks MulConst recognition.
+/// Strategy: Try raw lowering first (to preserve MulConst), 
+/// fallback to full round-trip if transcendentals remain.
 pub fn compile_to_ops(node: Arc<EmlNode>) -> FlatProgram {
-    lower_to_flat_ops(&node)
+    let raw_program = lower_to_flat_ops(&node);
+    if raw_program.transcendental_count() == 0 {
+        return raw_program;
+    }
+
+    // If raw tree has trans, try to optimize them away (e.g. ln(exp(x)))
+    let optimized = round_trip_optimize(node);
+    lower_to_flat_ops(&optimized)
 }
+
+
+
+
 
 
 fn apply_rules_bottom_up(node: Arc<EmlNode>, rules: &[RoundTripRule]) -> Arc<EmlNode> {

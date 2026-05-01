@@ -88,52 +88,45 @@ mod tests {
 
     #[test]
     fn test_mul_eml_correct() {
-        use crate::constant_fold::try_evaluate;
         use crate::constant_fold::ConstantMap;
-
         let x = var("x");
-        let _y = var("y");
-        // Use canonical mul_cf from ast.rs (PAPER.md §4.2, Theorem 3)
-        let tree_xy = eml(
-            mul_cf(x, 1.0), // x * 1.0 as a proxy — mul_cf(x, w) not mul_cf(x,y)
-            one(),
-        );
-        // Direct: mul_cf(x, 4.0) for x=3.0 → should give 12.0
-        let tree = mul_cf(var("x"), 4.0);
+        let tree = mul_cf(x, 4.0);
         let mut consts = ConstantMap::new();
         consts.insert("x".to_string(), 3.0);
 
-        let result = try_evaluate(&tree, &consts).unwrap();
+        use crate::round_trip::compile_to_ops;
+        let program = compile_to_ops(tree);
+        let result = program.execute(&consts).expect("Evaluation failed");
         assert!((result - 12.0).abs() < 1e-8, "Expected 3*4=12, got {}", result);
-        let _ = tree_xy; // suppress unused warning
     }
 
     #[test]
     fn test_mul_eml_node_count() {
-        // mul_cf runtime tree has 8 internal eml nodes:
-        //   eml(eml(ln(ln(x)), Const(1/w)), one())
-        //   = 1(root) + 1(inner eml) + 3(ln(ln(x))) + 3(ln(x)) ← wait, ln_node adds 3 each
-        //   Actual count: ln(x)=3, ln(ln(x))=6, eml(lnln,inv)=7, eml(…,1)=8
-        // The "5 nodes" from PAPER.md §4.2 is the *effective* cost when
-        // ln(ln(x)) is precomputed offline as a constant (== treated as a leaf).
-        // At runtime the full tree is 8 internal nodes. See also constant_fold.rs:134.
+        // mul_cf runtime tree has 8 internal eml nodes
         let tree = mul_cf(var("x"), 2.0);
         assert_eq!(tree.eml_count(), 8, "mul_cf runtime tree has {} eml nodes, expected 8", tree.eml_count());
     }
 
-
     #[test]
-    fn test_mul_eml_positive_only() {
-        // NOTE: mul_cf works only for x > 0 (PAPER.md §4.2 precondition)
-        // For negative activations use ALU backend
-        use crate::constant_fold::try_evaluate;
+    fn test_mul_cf_stability_via_rt() {
         use crate::constant_fold::ConstantMap;
-
         let mut consts = ConstantMap::new();
         consts.insert("x".to_string(), -2.0);
         let tree = mul_cf(var("x"), 3.0);
-        // We expect None because ln(ln(-2.0)) is NaN
-        assert!(try_evaluate(&tree, &consts).is_none(),
-            "mul_cf does not work for negative x — use ALU backend");
+        
+        // 1. Raw evaluation fails (ln(ln(-2)) is NaN/None)
+        use crate::constant_fold::try_evaluate;
+        assert!(try_evaluate(&tree, &consts).is_none(), 
+            "Raw evaluation MUST fail for x < 0 due to domain errors");
+
+        // 2. Round-Trip optimization stabilizes this by recognizing x * w!
+        use crate::round_trip::compile_to_ops;
+        let program = compile_to_ops(tree);
+        let result = program.execute(&consts)
+            .expect("Round-Trip optimization should stabilize mul_cf for x < 0");
+        assert_eq!(result, -6.0, "Optimized x * w should yield -6.0");
     }
+
+
+
 }

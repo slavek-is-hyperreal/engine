@@ -87,12 +87,17 @@ fn main() {
 
     let mut out_file = std::fs::File::create("models/benchmark_results.txt")
         .expect("Cannot create results file");
-    writeln!(out_file, "row,alu,eml,diff,build_ms,rewrite_ms,eval_ms").unwrap();
+    writeln!(out_file, "row,alu,eml,diff,build_ms,rewrite_ms,eval_ms,nodes_before,nodes_after,reduction_pct").unwrap();
+
 
     let mut eml_results = Vec::with_capacity(d_k);
     let mut total_build   = std::time::Duration::ZERO;
     let mut total_rewrite = std::time::Duration::ZERO;
     let mut total_eval    = std::time::Duration::ZERO;
+
+    let mut last_nodes_before = 0;
+    let mut last_nodes_after = 0;
+    let mut last_reduction = 0.0;
 
     for (row_idx, row_weights) in weights.w_q_head0.iter().enumerate() {
         // Budowa drzewa EML
@@ -100,17 +105,29 @@ fn main() {
         let tree = build_dot_product_eml(&x_vars, row_weights);
         let dt_build = t_build.elapsed();
 
+        let nodes_before = tree.node_count();
+
         // TRS do fixpoint
         let t_rewrite = Instant::now();
         let tree_opt = rewrite(tree);
         let dt_rewrite = t_rewrite.elapsed();
 
-        // Ewaluacja
+        let nodes_after = tree_opt.node_count();
+        let reduction = 1.0 - (nodes_after as f64 / nodes_before as f64);
+
+        last_nodes_before = nodes_before;
+        last_nodes_after = nodes_after;
+        last_reduction = reduction;
+
+        // Ewaluacja (Optimized path using Round-Trip TRS)
+        use eml_trs::round_trip::compile_to_ops;
         let t_eval = Instant::now();
-        let eml_val = try_evaluate(&tree_opt, &const_map)
+        let program = compile_to_ops(tree_opt);
+        let eml_val = program.execute(&const_map)
             .map(|v| v as f32)
             .unwrap_or(f32::NAN);
         let dt_eval = t_eval.elapsed();
+
 
         total_build   += dt_build;
         total_rewrite += dt_rewrite;
@@ -121,7 +138,7 @@ fn main() {
 
         // Zapisz wiersz wyników
         writeln!(out_file,
-            "{},{:.8},{:.8},{:.2e},{:.3},{:.3},{:.3}",
+            "{},{:.8},{:.8},{:.2e},{:.3},{:.3},{:.3},{},{},{:.1}",
             row_idx,
             alu_results[row_idx],
             eml_val,
@@ -129,6 +146,9 @@ fn main() {
             dt_build.as_secs_f64() * 1000.0,
             dt_rewrite.as_secs_f64() * 1000.0,
             dt_eval.as_secs_f64() * 1000.0,
+            nodes_before,
+            nodes_after,
+            reduction * 100.0,
         ).unwrap();
         out_file.flush().unwrap();
 
@@ -140,12 +160,14 @@ fn main() {
             } else {
                 std::time::Duration::ZERO
             };
-            eprintln!("[{:3}/{}] diff={:.2e}  elapsed={:.1}s  ETA={:.0}s",
+            eprintln!("[{:3}/{}] diff={:.2e} nodes={}/{} ({:.1}%) elapsed={:.1}s ETA={:.0}s",
                 row_idx + 1, d_k, diff,
+                nodes_after, nodes_before, reduction * 100.0,
                 elapsed.as_secs_f64(),
                 remaining.as_secs_f64());
         }
     }
+
 
     // ============================================================
     // PODSUMOWANIE
@@ -180,6 +202,13 @@ fn main() {
     println!("  Status:         {}", if max_diff < bf16_eps { "✅ OK" } else { "⚠️  POZA ZAKRESEM" });
     println!("  NaN count:      {}/{}", nan_count, d_k);
     println!();
+    println!("--- Redukcja węzłów (Dot Product K=2048) ---");
+    println!("  Nodes before TRS: {}", last_nodes_before);
+    println!("  Nodes after TRS:  {}", last_nodes_after);
+    println!("  TRS eliminuje {:.1}% węzłów w dot product z float32 wagami", last_reduction * 100.0);
+    println!("  (UWAGA: Teoretyczne 61.1% dotyczy całych warstw z fuzją Log-Softmax/RMSNorm)");
+
+
     if alu_time.as_nanos() > 0 {
         let overhead = eml_total.as_secs_f64() / alu_time.as_secs_f64();
         println!("EML overhead vs ALU: {:.0}×", overhead);

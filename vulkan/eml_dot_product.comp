@@ -14,6 +14,30 @@ layout(push_constant) uniform Params {
     float bias;  // Offset trick bias (np. 4.0)
 } params;
 
+// Minimax approximations for EML (FMA-optimized)
+const float LOG2_E = 1.44269504089;
+const float LN_2   = 0.69314718056;
+
+float fast_exp(float x) {
+    float xc = clamp(x, -87.0, 87.0);
+    float w = xc * LOG2_E;
+    float i = floor(w);
+    float f = w - i;
+    float p = 1.00247605 + f * (0.65104678 + f * 0.34400111);
+    return p * ldexp(1.0, int(i));
+}
+
+float fast_ln(float x) {
+    if (x <= 0.0) return -1e38;
+    uint bx = floatBitsToUint(x);
+    float e = float(int((bx >> 23) & 0xFF) - 127);
+    float m = uintBitsToFloat((bx & 0x7FFFFF) | 0x3F800000);
+    float u = m - 1.0;
+    float poly = u * (0.98771793 + u * (-0.40916155 + u * 0.11513792));
+    return e * LN_2 + poly;
+}
+
+
 void main() {
     uint idx = gl_GlobalInvocationID.x;
     uint start = idx * params.K;
@@ -23,16 +47,14 @@ void main() {
 
     for (uint i = 0; i < params.K; i++) {
         float x = inputs[start + i];
-        float w = weights[i]; // Uproszczenie: te same wagi dla wszystkich (lub dodać offset wag)
+        float w = weights[idx * params.K + i]; 
         
         float abs_w = abs(w);
         if (abs_w < 1e-10) continue;
 
-        // EML mul_cf logic
+        // EML mul_cf logic (Minimax optimized)
         float x_shifted = x + params.bias;
-        // W shaderze używamy natywnych log/exp do weryfikacji parytetu, 
-        // a potem podmienimy na minimax_exp/ln dla wydajności.
-        float term = exp(log(x_shifted) + log(abs_w)) - (abs_w * params.bias);
+        float term = fast_exp(fast_ln(x_shifted) + fast_ln(abs_w)) - (abs_w * params.bias);
 
         if (w >= 0.0) {
             pos_sum += term;
@@ -41,8 +63,6 @@ void main() {
         }
     }
 
-    // Wynik końcowy: Suma_Dodatnich - Suma_Ujemnych
-    // W EML: eml(ln(pos_sum), exp(neg_sum))
-    // Tu używamy klasycznego odejmowania, bo na GPU floaty i tak są natywne.
     outputs[idx] = pos_sum - neg_sum;
 }
+

@@ -23,14 +23,13 @@ pub fn try_evaluate(node: &EmlNode, consts: &ConstantMap) -> Option<f64> {
             let lv = try_evaluate(l, consts)?;
             let rv = try_evaluate(r, consts)?;
             // eml(x, y) = exp(x) - ln(y)
-            // We allow rv = 0.0 because ln(0) = -inf is handled by f64
-            // and exp(-inf) = 0.0, which is used in neg_node.
-            // However, rv < 0.0 is still undefined in pure EML.
-            if rv < 0.0 { return None; }
-            Some(lv.exp() - rv.ln())
+            // ln(0) = -inf is handled by f64, exp(-inf) = 0.0 is used in neg_node.
+            let res = lv.exp() - rv.ln();
+            if res.is_nan() { None } else { Some(res) }
         }
     }
 }
+
 
 /// Recursive constant folding.
 /// Replaces subtrees with constant values where possible.
