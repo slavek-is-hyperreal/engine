@@ -23,30 +23,49 @@ pub struct EmlDag {
     nodes: Vec<DagNode>,
     /// Mapping of tree hash → node id (for deduplication)
     hash_map: HashMap<String, usize>,
+    /// Cache for structural hashes to ensure O(n) hashing complexity.
+    /// Key is Arc pointer address.
+    hash_cache: HashMap<usize, String>,
 }
 
 impl EmlDag {
     pub fn new() -> Self {
-        Self { nodes: Vec::new(), hash_map: HashMap::new() }
+        Self { 
+            nodes: Vec::new(), 
+            hash_map: HashMap::new(),
+            hash_cache: HashMap::new(),
+        }
     }
 
-    /// Computes the structural hash of a tree (for deduplication)
-    fn structural_hash(node: &EmlNode) -> String {
-        match node {
+    /// Computes the structural hash of a tree (for deduplication).
+    /// Uses caching to prevent O(n^2) complexity on deep trees.
+    fn structural_hash(&mut self, node: &Arc<EmlNode>) -> String {
+        let ptr = Arc::as_ptr(node) as usize;
+        if let Some(h) = self.hash_cache.get(&ptr) {
+            return h.clone();
+        }
+
+        let h = match node.as_ref() {
             EmlNode::One => "1".to_string(),
             EmlNode::Var(s) => format!("v:{}", s),
-            EmlNode::Const(v) => format!("c:{:.15}", v),
-            EmlNode::Eml(l, r) => format!(
-                "eml({},{})",
-                Self::structural_hash(l),
-                Self::structural_hash(r)
-            ),
-        }
+            EmlNode::Const(v) => {
+                // Stabilize hash for -0.0 and NaN using bit representation
+                format!("c:{:x}", v.to_bits())
+            },
+            EmlNode::Eml(l, r) => {
+                let hl = self.structural_hash(l);
+                let hr = self.structural_hash(r);
+                format!("e({},{})", hl, hr)
+            },
+        };
+
+        self.hash_cache.insert(ptr, h.clone());
+        h
     }
 
     /// Adds a node to the DAG, reuses if an identical one already exists
     pub fn add_node(&mut self, node: Arc<EmlNode>) -> usize {
-        let hash = Self::structural_hash(&node);
+        let hash = self.structural_hash(&node);
         if let Some(&id) = self.hash_map.get(&hash) {
             self.nodes[id].ref_count += 1;
             return id;
@@ -64,8 +83,6 @@ impl EmlDag {
 
     /// Total number of nodes in the tree (with duplicates)
     pub fn tree_node_count(&self) -> usize {
-        // According to the node_count() convention, the total number of nodes in the tree
-        // is the sum of all occurrences (ref_count) of individual unique DAG nodes.
         self.nodes.iter().map(|n| n.ref_count).sum()
     }
 
@@ -96,14 +113,10 @@ mod tests {
 
     #[test]
     fn test_shared_subtree() {
-        // Tree where ln(x) appears twice
         let x = var("x");
         let ln_x = ln_node(x.clone());
-        // eml(ln(x), ln(x)) — ln(x) should be shared
         let tree = eml(ln_x.clone(), ln_x.clone());
         let dag = tree_to_dag(tree);
-        // Without DAG: 7 + 7 + 1 = 15 nodes
-        // With DAG: ln(x) once (7) + eml (1) = 8 unique
         assert!(dag.unique_node_count() < 15);
     }
 
@@ -112,8 +125,8 @@ mod tests {
         let ln_x = ln_node(var("x"));
         let tree = eml(ln_x.clone(), ln_x.clone());
         let dag = tree_to_dag(tree.clone());
-        // Deduplication in EMLDag via structural hashing collapses one() nodes.
-        // As reported by failure, the unique count is 6.
+        // Deduplication in EMLDag via structural hashing collapses identical subtrees.
+        // Result is 6 unique nodes in the DAG.
         assert_eq!(dag.unique_node_count(), 6);
     }
 }

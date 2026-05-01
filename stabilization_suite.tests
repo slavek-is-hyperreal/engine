@@ -1,0 +1,291 @@
+=== 1. UNIT TESTS ===
+warning: unused import: `try_evaluate`
+  --> src/bin/eml_benchmark.rs:19:30
+   |
+19 | use eml_trs::constant_fold::{try_evaluate, ConstantMap};
+   |                              ^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `try_evaluate`
+  --> src/bin/eml_parity.rs:10:30
+   |
+10 | use eml_trs::constant_fold::{try_evaluate, ConstantMap};
+   |                              ^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `k`
+  --> src/bin/full_layer_parity.rs:56:9
+   |
+56 |     let k: Vec<f32> = w_k.iter().map(|row| row.iter().zip(x_norm.iter()).map(|(w, x)| w * x).sum()).collect();
+   |         ^ help: if this is intentional, prefix it with an underscore: `_k`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `alu_final`
+  --> src/bin/full_layer_parity.rs:65:9
+   |
+65 |     let alu_final: Vec<f32> = x_res1.iter().zip(ffn_out.iter()).map(|(a, b)| a + b).collect();
+   |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_alu_final`
+
+warning: `eml-trs` (bin "eml_benchmark" test) generated 1 warning (run `cargo fix --bin "eml_benchmark" -p eml-trs --tests` to apply 1 suggestion)
+warning: `eml-trs` (bin "eml_parity" test) generated 1 warning (run `cargo fix --bin "eml_parity" -p eml-trs --tests` to apply 1 suggestion)
+warning: `eml-trs` (bin "full_layer_parity" test) generated 2 warnings (run `cargo fix --bin "full_layer_parity" -p eml-trs --tests` to apply 2 suggestions)
+warning: unused import: `eml_trs::trs::rewrite`
+  --> src/bin/fusion_benchmark.rs:15:5
+   |
+15 | use eml_trs::trs::rewrite;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::sync::Arc`
+  --> src/bin/fusion_benchmark.rs:17:5
+   |
+17 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused imports: `ConstantMap` and `try_evaluate`
+ --> src/bin/math_verification.rs:2:30
+  |
+2 | use eml_trs::constant_fold::{try_evaluate, ConstantMap};
+  |                              ^^^^^^^^^^^^  ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `eml-trs` (bin "fusion_benchmark" test) generated 2 warnings (run `cargo fix --bin "fusion_benchmark" -p eml-trs --tests` to apply 2 suggestions)
+warning: `eml-trs` (bin "math_verification" test) generated 1 warning (run `cargo fix --bin "math_verification" -p eml-trs --tests` to apply 1 suggestion)
+warning: field `rms_norm` is never read
+  --> src/bin/layer_benchmark.rs:13:5
+   |
+11 | struct LayerWeights {
+   |        ------------ field in this struct
+12 |     w_q_head0: Vec<Vec<f32>>,
+13 |     rms_norm: Vec<f32>,
+   |     ^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `eml-trs` (bin "layer_benchmark" test) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.10s
+     Running unittests src/lib.rs (target/release/deps/eml_trs-b27bd05a9770b2f9)
+
+running 86 tests
+test asis::tests::test_asis_correctness_k4 ... ok
+test asis::tests::test_mul_cf_stability_via_rt ... ok
+test asis::tests::test_asis_correctness_k2 ... ok
+test asis::tests::test_mul_eml_node_count ... ok
+test ast::tests::test_exp_node_cost ... ok
+test asis::tests::test_asis_tree_size ... ok
+test asis::tests::test_mul_eml_correct ... ok
+test ast::tests::test_ln_node_cost ... ok
+test ast::tests::test_neg_node_structure ... ok
+test ast::tests::test_leaf_count ... ok
+test ast::tests::test_neg_node_evaluates_correctly ... ok
+test ast::tests::test_shared_subtree_computed_once ... ok
+test ast::tests::test_tree_node_count_correct ... ok
+test backends::vulkan_eml::tests::test_cpu_fast_exp_accuracy ... ok
+test ast::tests::test_structural_eq ... ok
+test backends::vulkan_eml::tests::test_cpu_fast_ln_accuracy ... ok
+test backends::vulkan_eml::tests::test_cpu_log_softmax_parity_with_naive ... ok
+test backends::vulkan_eml::tests::test_cpu_log_softmax_sums_to_zero ... ok
+test backends::vulkan_eml::tests::test_gpu_dot_product_parity ... ignored, requires GPU / Vulkan adapter
+test backends::vulkan_eml::tests::test_gpu_log_softmax_parity ... ignored, requires GPU / Vulkan adapter
+test compress::decompress::tests::test_full_roundtrip ... ok
+test compress::lift::tests::test_empty_lifting ... ok
+test compress::lift::tests::test_lift_unlift_roundtrip ... ok
+test compress::lift::tests::test_lift_text ... ok
+test compress::serial::tests::test_serialization_roundtrip ... ok
+test constant_fold::tests::test_partial_fold ... ok
+test constant_fold::tests::test_asis_preprocess ... ok
+test cost_model::tests::test_asis_reduction ... ok
+test cost_model::tests::test_base_costs ... ok
+test cost_model::tests::test_dot_product_formulas ... ok
+test constant_fold::tests::test_full_constant_tree ... ok
+test constant_fold::tests::test_mul_reduction ... ok
+test cost_model::tests::test_attention_lower_bound ... ok
+test cost_model::tests::test_log_softmax_cheaper_than_softmax ... ok
+test cost_model::tests::test_silu_equals_sigmoid ... ok
+test cost_model::tests::test_swiglu_fused_cheaper ... ok
+test cost_model::tests::test_tinyllama_attention_softmax_fraction ... ok
+test dag::tests::test_shared_subtree ... ok
+test cost_model::tests::test_residual_fused_one_node ... ok
+test cost_model::tests::test_rope_cf_cost ... ok
+test dag::tests::test_tree_node_count_correct ... ok
+test cost_model::tests::test_tinyllama_layer_reduction ... ok
+test fusions::tests::test_swiglu_fused_structure ... ok
+test fusions::tests::test_swiglu_fused_correctness ... ok
+test nn_layer::tests::test_correctness_numerical ... ok
+test nn_layer::tests::test_build_and_optimize_sample ... ok
+test nn_layer::tests::test_measure_costs ... ok
+test nn_layer::tests::test_build_dot_product_structure ... ok
+test nn_layer::tests::test_preprocess_wq_offline ... ok
+test polar::tests::test_apply_rope ... ok
+test polar::tests::test_dot_product ... ok
+test round_trip::tests::test_lower_dot_product_k4 ... ok
+test round_trip::tests::test_k1_dot_product_ops ... ok
+test round_trip::tests::test_lower_simple_add ... ok
+test polar::tests::test_from_cartesian ... ok
+test round_trip::tests::test_lower_sub ... ok
+test round_trip::tests::test_mul_cf_recognized_as_mul_const ... ok
+test round_trip::tests::test_nested_round_trip ... ok
+test round_trip::tests::test_recognize_classical_on_mul_cf ... ok
+test round_trip::tests::test_round_trip_no_regression ... ok
+test round_trip::tests::test_rt4_ln_exp_cancel ... ok
+test round_trip::tests::test_transcendental_count_exp_ln_cancel ... ok
+test trs::tests::test_nested_reduction ... ok
+test trs::tests::test_ln_exp_cancel ... ok
+test trs::tests::test_exp_ln_cancel ... ok
+test trs::tests::test_no_increase ... ok
+test tslp::depth::tests::test_exp_depth_one ... ok
+test tslp::depth::tests::test_depth_reduction_multilayer ... ok
+test tslp::depth::tests::test_leaf_depth_zero ... ok
+test tslp::depth::tests::test_ln_depth_three ... ok
+test tslp::depth::tests::test_shared_subtree_computed_once ... ok
+test tslp::executor::tests::test_depth_reduction_exists ... ok
+test tslp::ganardi::tests::test_ganardi_already_balanced_no_blowup ... ok
+test tslp::grammar::tests::test_grammar_depth_equals_tree_depth ... ok
+test tslp::ganardi::tests::test_ganardi_large_spine ... ok
+test tslp::grammar::tests::test_shared_node_grammar ... ok
+test tslp::ganardi::tests::test_ganardi_reduces_depth_no_oom ... ok
+test tslp::grammar::tests::test_dot_product_compression ... ok
+test tslp::parallel_prefix::tests::test_parallel_prefix_depth_k64 ... ok
+test tslp::parallel_prefix::tests::test_parallel_prefix_k4_correctness ... ok
+test tslp::parallel_prefix::tests::test_parallel_prefix_depth_scaling ... ok
+test tslp::rake_compress::tests::test_rake_compress_no_regression ... ok
+test tslp::scheduler::tests::test_schedule_exp_x ... ok
+test tslp::scheduler::tests::test_schedule_dot_product_k4 ... ok
+test tslp::scheduler::tests::test_schedule_multilayer_after_trs ... ok
+test tslp::rake_compress::tests::test_rake_compress_dot_product ... ok
+
+test result: ok. 84 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/bin/cost_verification.rs (target/release/deps/cost_verification-5ffa2a59d09f9bda)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/depth_verify.rs (target/release/deps/depth_verify-e4cf7ca13edf51f1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/eml_benchmark.rs (target/release/deps/eml_benchmark-1a46bb3a91f93ebf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/eml_compress.rs (target/release/deps/eml_compress-7690b72b63ba6e1f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/eml_parity.rs (target/release/deps/eml_parity-874f5e3fa1c885ee)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/full_layer_parity.rs (target/release/deps/full_layer_parity-4cae2edc88230e0d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fusion_benchmark.rs (target/release/deps/fusion_benchmark-44a91ab17adb309a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/layer_benchmark.rs (target/release/deps/layer_benchmark-b0ab9be5348749f1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/math_verification.rs (target/release/deps/math_verification-9acb73ccd3f09d91)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/softmax_verify.rs (target/release/deps/softmax_verify-5aaadbba4807700c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests eml_trs
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+=== 2. LAYER BENCHMARK (REDUCTION) ===
+warning: field `rms_norm` is never read
+  --> src/bin/layer_benchmark.rs:13:5
+   |
+11 | struct LayerWeights {
+   |        ------------ field in this struct
+12 |     w_q_head0: Vec<Vec<f32>>,
+13 |     rms_norm: Vec<f32>,
+   |     ^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `eml-trs` (bin "layer_benchmark") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.10s
+     Running `target/release/layer_benchmark`
+=== EML EMPIRICAL LAYER BENCHMARK (HONEST VERSION) ===
+Loaded layer 0: K=2048, d_k=64
+
+| Operacja         | Węzły naive | Węzły opt | Redukcja |
+|------------------|-------------|-----------|----------|
+| RMSNorm (Full)   |        4224 |     41560 |   -883.9% |
+| Dot Product (64) |        2285 |      1728 |     24.4% |
+| Log-Softmax (64) |        2223 |       838 |     62.3% |
+|------------------|-------------|-----------|----------|
+| RAZEM            |        8732 |     44126 |   -405.3% |
+
+Verification: Real Complexity Reduction -405.3%
+
+=== NUMERICAL PARITY (K=128) ===
+Dot:           eml=-0.933178, alu=-3.718322, diff=2.79e0
+Log-Softmax:   eml=-9.729866, alu=-9.729866, diff=0.00e0
+
+=== 3. END-TO-END PARITY ===
+   Compiling eml-trs v0.1.0 (/my_data/engine)
+warning: unused variable: `k`
+  --> src/bin/full_layer_parity.rs:56:9
+   |
+56 |     let k: Vec<f32> = w_k.iter().map(|row| row.iter().zip(x_norm.iter()).map(|(w, x)| w * x).sum()).collect();
+   |         ^ help: if this is intentional, prefix it with an underscore: `_k`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `alu_final`
+  --> src/bin/full_layer_parity.rs:65:9
+   |
+65 |     let alu_final: Vec<f32> = x_res1.iter().zip(ffn_out.iter()).map(|(a, b)| a + b).collect();
+   |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_alu_final`
+
+warning: `eml-trs` (bin "full_layer_parity") generated 2 warnings (run `cargo fix --bin "full_layer_parity" -p eml-trs` to apply 2 suggestions)
+    Finished `release` profile [optimized] target(s) in 1.40s
+     Running `target/release/full_layer_parity`
+=== EML End-to-End Parity Test: TinyLlama Layer 0 ===
+Loaded 374MB weights in 5.652764818s
+Standard ALU inference done in 37.390586ms
+Starting EML inference (Round-Trip optimized)...
+EML verification for slice (Q-Projection) done in 1.997293165s
+
+RESULTS (EML Q-Projection vs ALU):
+MSE:      1.15e-14
+Max Diff: 4.77e-7
+STATUS:   ✅ VERIFIED (within f32 precision)

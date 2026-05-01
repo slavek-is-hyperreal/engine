@@ -48,9 +48,15 @@ impl FlatProgram {
         self.ops.iter().filter(|op| matches!(op, FlatOp::Exp(_) | FlatOp::Ln(_))).count()
     }
 
-    /// Count all arithmetic operations
+    /// Count all instructions (including LoadVar/LoadConst)
     pub fn op_count(&self) -> usize {
         self.ops.len()
+    }
+
+    /// Count only actual arithmetic/mathematical operations.
+    /// Excludes LoadVar and LoadConst for fair comparison with ALU/FMA counts.
+    pub fn arithmetic_op_count(&self) -> usize {
+        self.ops.iter().filter(|op| !matches!(op, FlatOp::LoadVar(_) | FlatOp::LoadConst(_))).count()
     }
 
     /// Execute the flat program on given variable values
@@ -172,6 +178,7 @@ pub fn recognize_classical(node: &Arc<EmlNode>) -> Option<ClassicalOp> {
 fn is_one(n: &EmlNode) -> bool { matches!(n, EmlNode::One) }
 
 /// Classical operation — intermediate form
+#[derive(Debug)]
 pub enum ClassicalOp {
     Exp(Arc<EmlNode>),
     Ln(Arc<EmlNode>),
@@ -342,10 +349,6 @@ pub fn round_trip_optimize(node: Arc<EmlNode>) -> Arc<EmlNode> {
     rewrite(node)
 }
 
-
-
-
-
 /// Round-trip + lower: returns the flat op sequence.
 /// Strategy: Try raw lowering first (to preserve MulConst), 
 /// fallback to full round-trip if transcendentals remain.
@@ -359,11 +362,6 @@ pub fn compile_to_ops(node: Arc<EmlNode>) -> FlatProgram {
     let optimized = round_trip_optimize(node);
     lower_to_flat_ops(&optimized)
 }
-
-
-
-
-
 
 fn apply_rules_bottom_up(node: Arc<EmlNode>, rules: &[RoundTripRule]) -> Arc<EmlNode> {
     let node = if let EmlNode::Eml(l, r) = node.as_ref() {
@@ -489,10 +487,9 @@ mod tests {
         let result = program.execute(&vars).expect("Should evaluate");
         assert!((result - expected).abs() < 1e-4,
             "Expected {:.6}, got {:.6}", expected, result);
-    }  // end test_lower_dot_product_k4
+    }
 
     #[test]
-
     fn test_mul_cf_recognized_as_mul_const() {
         // bare mul_cf(x, 0.5) should lower to exactly: LoadVar + MulConst = 2 ops, 0 trans
         let x = var("x");
@@ -522,12 +519,18 @@ mod tests {
         let tree = build_dot_product_eml(&inputs, &weights);
         let program = compile_to_ops(tree);
         println!("K=1 single term: {} ops, {} trans", program.op_count(), program.transcendental_count());
-        // With MulConst: 8 ops (LoadVar + 2xLoadConst + 2xSub + MulConst + LoadConst + Sub)
         // 0 transcendentals expected
         assert_eq!(program.transcendental_count(), 0,
             "K=1 should have 0 transcendentals, got {} trans in {} ops",
             program.transcendental_count(), program.op_count());
     }
+
+    #[test]
+    fn test_arithmetic_op_count() {
+        let tree = add_eml(var("x"), var("y"));
+        let program = compile_to_ops(tree);
+        // add_eml(x, y) = sub(x, neg(y))
+        // Program should have 2 arithmetic ops: Sub (from add_eml) and Sub (from neg_node)
+        assert_eq!(program.arithmetic_op_count(), 2);
+    }
 }
-
-

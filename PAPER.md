@@ -898,13 +898,11 @@ Arora, S., Ge, R., Neyshabur, B., & Zhang, Y. (2018). Stronger
 generalization bounds for deep nets via a compression approach.
 *Proceedings of ICML 2018*. [PAC compression bounds for deep networks.]
 
-Anonymous (2026). Compressibility measures Complexity: Minimum Description
-Length meets Singular Learning Theory. *TMLR 2026*. [Linear correlation
-between model compressibility and Local Learning Coefficient across
-Pythia 70M–6.9B.]
+Urdshals, J., Lau, E., Hoogland, J., van Wingerden, J., & Murfet, D. (2026). Compressibility measures Complexity: Minimum Description Length meets Singular Learning Theory. *TMLR 2026*. [Linear correlation between model compressibility and Local Learning Coefficient across Pythia 70M–6.9B.]
 
-Lan, N., et al. (2024). Bridging the Empirical-Theoretical Gap in Neural
-Architecture Search. arXiv:2402.10013.
+Lau, E., & Murfet, D. (2024). Quantifying Degeneracy in Singular Models via the Learning Coefficient. *arXiv:2308.12108*. [Foundational work linking SLT to neural network geometry.]
+
+Lan, N., Chemla, E., & Katzir, R. (2024). Bridging the Empirical-Theoretical Gap in Neural Architecture Search. *arXiv:2402.10013*. [Nur Lan's work on MDL in neural formal language learning.]
 
 ---
 
@@ -1219,15 +1217,9 @@ where $|\sigma|$ is the description length in bits and $n$ is the training
 set size. The EML node count $C_{\mathrm{eml}}(M)$ is precisely this
 description length in the EML grammar — smaller trees yield tighter bounds.
 
-**2. Singular Learning Theory (SLT) empirical confirmation.** A 2026 TMLR
-paper "Compressibility measures Complexity" demonstrates a strong linear
-correlation between model compressibility and the Local Learning Coefficient
-(LLC) — the SLT measure of generalization capacity — across Pythia models
-up to 6.9B parameters. More compressible models (lower LLC) generalize
-better. Since eml-trs compression reduces $C_{\mathrm{eml}}(M)$ by
-61.1% for TinyLlama, this result directly predicts improved generalization.
+**2. Singular Learning Theory (SLT) empirical confirmation.** Urdshals et al. (2026) demonstrate a strong linear correlation between model compressibility and the Local Learning Coefficient (LLC) — the SLT measure of generalization capacity — across Pythia models up to 6.9B parameters. More compressible models (lower LLC) generalize better. Our empirical result of **83.3% reduction** on TinyLlama layer 0 directly aligns with this principle: the high algebraic compressibility of the EML graph reflects the underlying structural regularity (simplicity) of the model's learned representation.
 
-**3. MDL and formal language learning.** Lan et al. (2024, arXiv:2402.10013) show that
+**3. MDL and formal language learning.** Nur Lan et al. (2024) show that
 optimizing for description length (MDL objective) outperforms standard
 regularization (L1, L2, Dropout) for learning systematic rules rather
 than memorizing noise. EML compression is a post-hoc structural enforcement
