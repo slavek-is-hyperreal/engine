@@ -48,3 +48,16 @@ Verified using `src/bin/full_layer_parity.rs` on `models/tinyllama-f16.gguf`.
 ---
 *Verified on: 2026-05-01*
 *Environment: Linux Mint, AMD Radeon R7 200 Series (Vulkan)*
+## 5. Future Plan: Real-World Chat Implementation
+The current verification confirms the mathematical and structural efficiency of the EML pipeline. The next phase targets a fully functional chat interface with the following milestones:
+
+1. **Binary Weight Loading**: Utilize **`candle-core`** to implement a high-performance binary loader for GGUF/Safetensors. This will enable handling all 22 layers (~2.2GB) with zero-copy memory mapping.
+2. **KV-Cache Integration**: Implement stateful DAG nodes to store and reuse Key/Value tensors across generation steps, essential for maintaining $O(n)$ inference cost.
+3. **Tokenizer Integration**: Native `tokenizers-rs` support for end-to-end Text-to-Text generation.
+4. **Comprehensive Benchmark**: Comparative study of 4 execution paths:
+   - **Standard ALU (CPU)** vs **EML Optimized (CPU)**
+   - **Standard FMA (GPU)** vs **EML Minimax (GPU)**
+   - **Settings**: `temperature=0` (Greedy Search) for bit-perfect comparison.
+   - **Metric**: Tokens per second (TPS) on a sequence of 512 tokens.
+
+**Hypothesis:** The 83.3% reduction in node count, combined with the algebraic fusion of nonlinearities, will result in a measurable speedup in token generation latency on bandwidth-constrained hardware.
