@@ -1,0 +1,15 @@
+# Task: Out-of-Core Unified DAG (V3)
+
+- [ ] Krok 0: Przygotowanie ZFS (`vectorlegis_ssd_pool/eml_working`)
+- [ ] Krok 1: Dodanie zależności `memmap2` do `Cargo.toml`
+- [ ] Krok 2: Implementacja `src/dag_mmap.rs`
+    - [ ] `CompactNode` struct
+    - [ ] `MmapDag` struct i `create()` (z pre-alokacją 200M)
+    - [ ] `intern_var` i `intern_const`
+    - [ ] `add_eml_node` (globalna deduplikacja)
+- [ ] Krok 3: Adapter `add_tree_to_mmap_dag` (z `local_cache` per tree)
+- [ ] Krok 4: Implementacja `src/bin/full_layer_unified_v3.rs`
+- [ ] Krok 5: Testy i weryfikacja
+    - [ ] Test jednostkowy `MmapDag`
+    - [ ] TEST KLUCZOWY: `test_no_duplicate_xvars` (cross-row sharing)
+    - [ ] Uruchomienie pełnego audytu V3

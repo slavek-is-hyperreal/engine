@@ -17,6 +17,9 @@ __pycache__/
 
 # Project specific
 eml_trs_bundle_*.txt
+eml_code_bundle_*.txt
+*.tests
+target_zfs/
 test_gguf
 test_gguf2
 *.gguf
@@ -24,4 +27,5 @@ models/
 research/
 
 # OS
-.DS_Store!scripts/
+.DS_Store
+!scripts/

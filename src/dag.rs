@@ -9,6 +9,9 @@ use crate::ast::*;
 use std::sync::Arc;
 use std::collections::HashMap;
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
 /// DAG Node — can be shared
 #[derive(Debug)]
 pub struct DagNode {
@@ -21,11 +24,11 @@ pub struct DagNode {
 /// DAG graph with node table
 pub struct EmlDag {
     nodes: Vec<DagNode>,
-    /// Mapping of tree hash → node id (for deduplication)
-    hash_map: HashMap<String, usize>,
+    /// Mapping of structural hash → node id (for deduplication)
+    hash_map: HashMap<u64, usize>,
     /// Cache for structural hashes to ensure O(n) hashing complexity.
     /// Key is Arc pointer address.
-    hash_cache: HashMap<usize, String>,
+    hash_cache: HashMap<usize, u64>,
 }
 
 impl EmlDag {
@@ -39,40 +42,55 @@ impl EmlDag {
 
     /// Computes the structural hash of a tree (for deduplication).
     /// Uses caching to prevent O(n^2) complexity on deep trees.
-    fn structural_hash(&mut self, node: &Arc<EmlNode>) -> String {
+    fn structural_hash(&mut self, node: &Arc<EmlNode>) -> u64 {
         let ptr = Arc::as_ptr(node) as usize;
-        if let Some(h) = self.hash_cache.get(&ptr) {
-            return h.clone();
+        if let Some(&h) = self.hash_cache.get(&ptr) {
+            return h;
         }
 
         let h = match node.as_ref() {
-            EmlNode::One => "1".to_string(),
-            EmlNode::Var(s) => format!("v:{}", s),
+            EmlNode::One => {
+                let mut s = DefaultHasher::new();
+                0u8.hash(&mut s);
+                s.finish()
+            },
+            EmlNode::Var(name) => {
+                let mut s = DefaultHasher::new();
+                1u8.hash(&mut s);
+                name.hash(&mut s);
+                s.finish()
+            },
             EmlNode::Const(v) => {
-                // Stabilize hash for -0.0 and NaN using bit representation
-                format!("c:{:x}", v.to_bits())
+                let mut s = DefaultHasher::new();
+                2u8.hash(&mut s);
+                v.to_bits().hash(&mut s);
+                s.finish()
             },
             EmlNode::Eml(l, r) => {
                 let hl = self.structural_hash(l);
                 let hr = self.structural_hash(r);
-                format!("e({},{})", hl, hr)
+                let mut s = DefaultHasher::new();
+                3u8.hash(&mut s);
+                hl.hash(&mut s);
+                hr.hash(&mut s);
+                s.finish()
             },
         };
 
-        self.hash_cache.insert(ptr, h.clone());
+        self.hash_cache.insert(ptr, h);
         h
     }
 
     /// Adds a node to the DAG, reuses if an identical one already exists
     pub fn add_node(&mut self, node: Arc<EmlNode>) -> usize {
-        let hash = self.structural_hash(&node);
-        if let Some(&id) = self.hash_map.get(&hash) {
+        let h = self.structural_hash(&node);
+        if let Some(&id) = self.hash_map.get(&h) {
             self.nodes[id].ref_count += 1;
             return id;
         }
         let id = self.nodes.len();
         self.nodes.push(DagNode { node, id, ref_count: 1 });
-        self.hash_map.insert(hash, id);
+        self.hash_map.insert(h, id);
         id
     }
 
@@ -89,6 +107,12 @@ impl EmlDag {
     /// Savings from sharing
     pub fn sharing_savings(&self) -> usize {
         self.tree_node_count().saturating_sub(self.unique_node_count())
+    }
+
+    /// Clears the structural hash cache. Should be called after integrating a large tree
+    /// to free up memory from temporary pointer hashes that won't be reused.
+    pub fn clear_hash_cache(&mut self) {
+        self.hash_cache.clear();
     }
 }
 
