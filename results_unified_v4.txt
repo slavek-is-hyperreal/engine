@@ -1,6 +1,67 @@
-=== EML 1:1 UNIFIED GLOBAL DAG AUDIT & PARITY V4 ===
+   Compiling eml-trs v0.1.0 (/my_data/engine)
+warning: unnecessary parentheses around assigned value
+   --> src/bin/full_layer_unified_v4.rs:143:30
+    |
+143 |         total_naive_count += (rows as u64 * naive_per_row);
+    |                              ^                           ^
+    |
+    = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+    |
+143 -         total_naive_count += (rows as u64 * naive_per_row);
+143 +         total_naive_count += rows as u64 * naive_per_row ;
+    |
+
+warning: unnecessary parentheses around assigned value
+   --> src/bin/full_layer_unified_v4.rs:201:26
+    |
+201 |     total_naive_count += (w_down.len() as u64 * (36 * w_gate.len() - 19) as u64);
+    |                          ^                                                     ^
+    |
+help: remove these parentheses
+    |
+201 -     total_naive_count += (w_down.len() as u64 * (36 * w_gate.len() - 19) as u64);
+201 +     total_naive_count += w_down.len() as u64 * (36 * w_gate.len() - 19) as u64 ;
+    |
+
+warning: `eml-trs` (bin "full_layer_unified_v4") generated 2 warnings (run `cargo fix --bin "full_layer_unified_v4" -p eml-trs` to apply 2 suggestions)
+    Finished `release` profile [optimized] target(s) in 1.02s
+     Running `target/release/full_layer_unified_v4`
+=== EML 1:1 UNIFIED GLOBAL DAG AUDIT & PARITY V4 (FINAL) ===
 Strategy: Mmap-backed Global DAG + Row-by-Row Parity Verification.
 MmapDag initialized at /vectorlegis_ssd_pool/eml_working/global_dag_v4.bin.
-Loaded weights in 9.700691493s
+Loaded weights in 5.501761142s
 
 Auditing & Verifying RMSNorms...
+  Parity [attn_norm ]: max_diff=7.15e-7, mean_diff=1.24e-8, tests=2048
+  Parity [ffn_norm  ]: max_diff=7.15e-7, mean_diff=3.00e-8, tests=4096
+
+Integrating & Verifying matrix: q         ...
+  Progress:  512/2048 (Unique nodes: 13433332)
+  Progress: 1024/2048 (Unique nodes: 25995079)
+  Progress: 1536/2048 (Unique nodes: 37898747)
+  Parity [q         ]: max_diff=6.44e-6, mean_diff=1.90e-7, tests=6144
+
+Integrating & Verifying matrix: k         ...
+  Parity [k         ]: max_diff=8.58e-6, mean_diff=2.27e-7, tests=6400
+
+Integrating & Verifying matrix: v         ...
+  Parity [v         ]: max_diff=8.58e-6, mean_diff=2.26e-7, tests=6656
+
+Integrating & Verifying matrix: o         ...
+  Progress:  512/2048 (Unique nodes: 71862910)
+  Progress: 1024/2048 (Unique nodes: 82520871)
+  Progress: 1536/2048 (Unique nodes: 92657020)
+  Parity [o         ]: max_diff=8.58e-6, mean_diff=2.26e-7, tests=8704
+
+Integrating & Verifying FFN Block (SwiGLU)...
+  FFN Progress:  512/5632 (Unique nodes: 120646649)
+  FFN Progress: 1024/5632 (Unique nodes: 137560404)
+  FFN Progress: 1536/5632 (Unique nodes: 153347861)
+  FFN Progress: 2048/5632 (Unique nodes: 168214072)
+  FFN Progress: 2560/5632 (Unique nodes: 182340169)
+  FFN Progress: 3072/5632 (Unique nodes: 195844496)
+  FFN Progress: 3584/5632 (Unique nodes: 208821590)
+  FFN Progress: 4096/5632 (Unique nodes: 221352147)
+  FFN Progress: 4608/5632 (Unique nodes: 233510774)
+  FFN Progress: 5120/5632 (Unique nodes: 245372208)

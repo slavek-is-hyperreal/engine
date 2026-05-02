@@ -24,11 +24,11 @@ echo -e "\n\n" >> "$OUTPUT"
 
 # 2. Łączenie plików (kod źródłowy + logi testów)
 # Omijamy: target, ukryte, research, venv, modele, .md, .txt, .csv
-# ALE dołączamy pliki .tests (logi z wykonania)
 find . -type f \
     \( -name "*.tests" -o \
        \( -not -path "*/target/*" \
-          -not -path "*/\.*" \
+          -not -path "*/target_zfs/*" \
+          -not -path "*/.*" \
           -not -path "*/research/*" \
           -not -path "*/venv/*" \
           -not -path "*/models/*" \
@@ -37,6 +37,7 @@ find . -type f \
           -not -name "eml_trs_bundle*.txt" \
           -not -name "test_gguf*" \
           -not -name "*.gguf" \
+          -not -name "*.bin" \
           -not -name "*.md" \
           -not -name "*.txt" \
           -not -name "*.csv" \) \) | sort | while read -r file; do

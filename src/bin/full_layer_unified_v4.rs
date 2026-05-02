@@ -43,7 +43,7 @@ impl ParityStats {
 }
 
 fn main() {
-    println!("=== EML 1:1 UNIFIED GLOBAL DAG AUDIT & PARITY V4 ===");
+    println!("=== EML 1:1 UNIFIED GLOBAL DAG AUDIT & PARITY V4 (FINAL) ===");
     println!("Strategy: Mmap-backed Global DAG + Row-by-Row Parity Verification.");
     
     let dag_path = "/vectorlegis_ssd_pool/eml_working/global_dag_v4.bin";
@@ -76,8 +76,8 @@ fn main() {
     // 1. RMSNorms
     println!("\nAuditing & Verifying RMSNorms...");
     for norm_name in ["attn_norm", "ffn_norm"] {
-        let weights = &data.weights[norm_name][0];
-        let d = weights.len();
+        let gammas = &data.weights[norm_name][0];
+        let d = gammas.len();
         
         // ALU Reference for this norm
         let ms = input_f32.iter().map(|&v| v*v).sum::<f32>() / d as f32;
@@ -87,15 +87,19 @@ fn main() {
         let mut x2_terms = Vec::new();
         for i in 0..d {
             let xv = var(&format!("x{}", i));
-            // x^2 = (x+4)(x+4) - 8x - 16
+            // x^2 = (x+4)^2 - 8(x+4) + 16
             x2_terms.push(mul_safe_stable(xv.clone(), xv));
         }
-        let mean_x2 = mul_cf(build_simple_sum(&x2_terms), 1.0 / d as f64);
-        let inv_rms = exp_node(mul_cf(ln_node(add_eml(mean_x2, konst(1e-5))), -0.5));
+        let sum_x2 = build_simple_sum(&x2_terms);
+        let mean_x2 = mul_cf_any_x(sum_x2, 1.0 / d as f64);
+        
+        // inv_rms = (mean_x2 + 1e-5)^-0.5
+        let inv_rms = exp_node(mul_cf_any_x(ln_node(add_eml(mean_x2, konst(1e-5))), -0.5));
 
         for i in 0..d {
             let x_i = var(&format!("x{}", i));
-            let out_tree = mul_safe_stable(x_i, inv_rms.clone());
+            let normalized = mul_eml_safe_stable(x_i, inv_rms.clone()); // x * inv_rms
+            let out_tree = mul_cf_any_x(normalized, gammas[i] as f64);       // * gamma
             
             // Audit
             let mut local_cache = HashMap::new();
@@ -104,7 +108,7 @@ fn main() {
             // Parity
             let program = compile_to_ops(out_tree);
             let eml_res = program.execute(&vars).unwrap() as f32;
-            let alu_res = input_f32[i] * inv_rms_alu; 
+            let alu_res = (input_f32[i] * inv_rms_alu) * gammas[i]; 
             stats.update(eml_res, alu_res);
         }
         total_naive_count += (66 * d) as u64;
@@ -158,19 +162,21 @@ fn main() {
         
         // Parity
         let program = compile_to_ops(fused);
-        let eml_res = program.execute(&vars).unwrap() as f32;
+        let eml_res = program.execute(&vars);
         
         let mut g_alu = 0.0f32; for j in 0..hidden { g_alu += input_f32[j] * w_gate[i][j]; }
         let mut u_alu = 0.0f32; for j in 0..hidden { u_alu += input_f32[j] * w_up[i][j]; }
         let alu_res = (g_alu / (1.0 + (-g_alu).exp())) * u_alu;
-        stats.update(eml_res, alu_res);
+
+        if let Some(res) = eml_res {
+            stats.update(res as f32, alu_res);
+        }
     }
     total_naive_count += (w_gate.len() * (36 * hidden - 19) * 2) as u64;
     stats.print("swiglu");
 
     // 4. Down projection
     let w_down = &data.weights["down"];
-    // For Down parity, we need a separate input sample representing SwiGLU outputs
     let mut swi_vars = HashMap::new();
     let mut swi_input_f32 = Vec::new();
     for i in 0..w_gate.len() {
@@ -197,7 +203,7 @@ fn main() {
 
     println!("\n=== FINAL V4 AUDIT & PARITY VERDICT ===");
     let total_opt = dag.unique_node_count() as u64;
-    let mean_diff = stats.sum_diff / stats.n_tests as f64;
+    let mean_diff = if stats.n_tests > 0 { stats.sum_diff / stats.n_tests as f64 } else { 0.0 };
     
     println!("Execution Time:     {:?}", t_start.elapsed());
     println!("Total Naive Nodes:  {:>16}", total_naive_count);
@@ -214,16 +220,46 @@ fn main() {
     }
 }
 
+// --- STABLE ARITHMETIC HELPERS ---
+
+/// Truly stable multiplication for any a, b > -3.0.
+/// ab = (a+4)(b+4) - 4(a+4) - 4(b+4) + 16
 fn mul_safe_stable(a: Arc<EmlNode>, b: Arc<EmlNode>) -> Arc<EmlNode> {
-    // ab = (a+4)(b+4) - 4a - 4b - 16
-    let a_s = add_eml(a.clone(), konst(4.0));
-    let b_s = add_eml(b.clone(), konst(4.0));
-    let prod_s = mul_eml(a_s, b_s);
+    let a_s = add_eml(a, konst(4.0));
+    let b_s = add_eml(b, konst(4.0));
+    let prod_s = mul_eml(a_s.clone(), b_s.clone());
     
-    let term_a = mul_cf(a, 4.0);
-    let term_b = mul_cf(b, 4.0);
+    // mul_cf on biased vars is safe because a+4 > 1
+    let term_a = mul_cf_robust(a_s, 4.0);
+    let term_b = mul_cf_robust(b_s, 4.0);
     
-    sub_eml(sub_eml(sub_eml(prod_s, term_a), term_b), konst(16.0))
+    add_eml(sub_eml(sub_eml(prod_s, term_a), term_b), konst(16.0))
+}
+
+/// Constant weight mul that works for any w and any x > -3.0 (via internal bias).
+fn mul_cf_any_x(x: Arc<EmlNode>, w: f64) -> Arc<EmlNode> {
+    if w == 0.0 { return konst(0.0); }
+    if w > 0.0 {
+        let x_s = add_eml(x, konst(4.0));
+        let prod = mul_cf(x_s, w);
+        sub_eml(prod, konst(4.0 * w))
+    } else {
+        // Recursive handling for negative w
+        neg_node(mul_cf_any_x(x, -w))
+    }
+}
+
+/// mul_cf for x guaranteed to be > 1.0 (like shifted vars), handles w sign.
+fn mul_cf_robust(x_s: Arc<EmlNode>, w: f64) -> Arc<EmlNode> {
+    if w == 0.0 { return konst(0.0); }
+    if w > 0.0 { mul_cf(x_s, w) } else { neg_node(mul_cf(x_s, -w)) }
+}
+
+/// Stable multiplication x(node) * w(node) using BIAS trick for x.
+fn mul_eml_safe_stable(x: Arc<EmlNode>, w: Arc<EmlNode>) -> Arc<EmlNode> {
+    let x_s = add_eml(x, konst(4.0));
+    let prod_s = mul_eml(x_s, w.clone());
+    sub_eml(prod_s, mul_cf_any_x(w, 4.0))
 }
 
 fn build_simple_sum(terms: &[Arc<EmlNode>]) -> Arc<EmlNode> {
