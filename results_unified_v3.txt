@@ -1,0 +1,53 @@
+   Compiling eml-trs v0.1.0 (/my_data/engine)
+warning: variable does not need to be mutable
+  --> src/bin/full_layer_unified_v3.rs:43:9
+   |
+43 |     let mut audit_norm = |dag: &mut MmapDag, name: &str, weights: &[f32]| {
+   |         ----^^^^^^^^^^
+   |         |
+   |         help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+  --> src/bin/full_layer_unified_v3.rs:67:9
+   |
+67 |     let mut integrate_matrix = |dag: &mut MmapDag, name: &str, weights: &Vec<Vec<f32>>, inputs: &Vec<Arc<EmlNode>>| {
+   |         ----^^^^^^^^^^^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: `eml-trs` (bin "full_layer_unified_v3") generated 2 warnings (run `cargo fix --bin "full_layer_unified_v3" -p eml-trs` to apply 2 suggestions)
+    Finished `release` profile [optimized] target(s) in 4.52s
+     Running `target/release/full_layer_unified_v3`
+=== EML 1:1 UNIFIED GLOBAL DAG AUDIT V3 (Out-of-Core) ===
+Strategy: Mmap-backed Global DAG on ZFS.
+Deduplication: Structural Hashing + Per-Tree Local Cache.
+
+MmapDag initialized at /vectorlegis_ssd_pool/eml_working/global_dag_v3.bin. Capacity: 500000000 nodes.
+Loaded 374MB weights in 5.77752527s
+Auditing RMSNorm (Fusion 3)...
+  Norm attn_norm integrated.
+  Norm ffn_norm integrated.
+Integrating matrix: q          (2048 rows)...
+  Progress: 1024/2048 (Unique nodes: 25914271)
+Integrating matrix: k          (256 rows)...
+Integrating matrix: v          (256 rows)...
+Integrating matrix: o          (2048 rows)...
+  Progress: 1024/2048 (Unique nodes: 82440065)
+Integrating FFN Block (SwiGLU)...
+  FFN Progress: 1024/5632 (Unique nodes: 137479598)
+  FFN Progress: 2048/5632 (Unique nodes: 168133266)
+  FFN Progress: 3072/5632 (Unique nodes: 195763690)
+  FFN Progress: 4096/5632 (Unique nodes: 221271341)
+  FFN Progress: 5120/5632 (Unique nodes: 245291402)
+Integrating matrix: down       (2048 rows)...
+  Progress: 1024/2048 (Unique nodes: 327354164)
+
+=== FINAL UNIFIED V3 AUDIT VERDICT ===
+Execution Time:     39676.37119088s
+Total Naive Nodes:        1585376768
+Total Unique Nodes:        390045050
+Sharing Savings:          3654626190 nodes
+FINAL REDUCTION:              75.40%
+SSD Storage used:   9.36 GB

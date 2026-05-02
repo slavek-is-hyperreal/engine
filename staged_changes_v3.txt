@@ -1,0 +1,1451 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index e688efd..add9713 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -232,6 +232,7 @@ dependencies = [
+  "eml-trs-macro",
+  "flate2",
+  "futures",
++ "memmap2",
+  "naga",
+  "serde",
+  "serde_json",
+@@ -679,6 +680,15 @@ version = "2.8.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
+ 
++[[package]]
++name = "memmap2"
++version = "0.9.10"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "714098028fe011992e1c3962653c96b2d578c4b4bce9036e15ff220319b1e0e3"
++dependencies = [
++ "libc",
++]
++
+ [[package]]
+ name = "metal"
+ version = "0.28.0"
+diff --git a/Cargo.toml b/Cargo.toml
+index 2208bf5..274e09b 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -19,6 +19,7 @@ flate2 = "1.0"
+ zstd = "0.13"
+ serde = { version = "1.0", features = ["derive"] }
+ serde_json = "1.0"
++memmap2 = "0.9"
+ 
+ [dev-dependencies]
+ 
+diff --git a/code_index.md b/code_index.md
+new file mode 100644
+index 0000000..f884be7
+--- /dev/null
++++ b/code_index.md
+@@ -0,0 +1,230 @@
++# OxiEML Engine Code Index
++
++## [lib.rs](file:///my_data/engine/src/lib.rs)
++- **Role**: Root crate module. Defines the module hierarchy and public API.
++- **Submodules**:
++  - `ast`: Core EML node types and constructors.
++  - `cost_model`: Analysis of computational cost (naive vs EML).
++  - `trs`: Term Rewriting System for algebraic optimization.
++  - `constant_fold`: Constant folding for EML nodes.
++  - `asis`: Structural identity synthesis (Legacy/Alternative).
++  - `dag`: In-memory DAG representation and deduplication.
++  - `backends`: Execution backends (ALU, WGSL, Naga).
++  - `fusions`: Higher-level operation fusions (Softmax, RMSNorm).
++  - `round_trip`: Lowering EML back to classical operations.
++  - `polar`: Polar coordinates/Rotation experiments.
++  - `nn_layer`: Neural network layer builders (Linear, SwiGLU).
++  - `tslp`: Tree Straight-Line Programs (Grammar compression).
++  - `compress`: Serialization and model compression tools.
++  - `dag_mmap`: Out-of-core SSD-mapped DAG engine.
++  - `loader`: Weight loaders (GGUF).
++
++## [ast.rs](file:///my_data/engine/src/ast.rs)
++- **Role**: Defines the core EML Expression Tree.
++- **Key Types**:
++  - `EmlNode` (Enum): `One`, `Var(String)`, `Const(f64)`, `Eml(Arc, Arc)`.
++- **Key Methods**:
++  - `node_count()`: DAG-aware total node count.
++  - `eml_count()`: DAG-aware internal node count.
++  - `depth()`: Memoized depth calculation.
++  - `structural_eq()`: Recursive structural equality with pointer-eq shortcut.
++  - `evaluate()`: Memoized numerical evaluation using `exp(x) - ln(y)`.
++- **Constructors & Macros**:
++  - `one()`, `var()`, `konst()`, `eml()`: Basic building blocks.
++  - `exp_node(x)`: `eml(x, 1)`.
++  - `ln_node(x)`: 7-node pattern for natural log.
++  - `mul_eml(x, y)`: Multiplication via log-space.
++  - `add_eml()`, `sub_eml()`: Addition and subtraction.
++  - `neg_node(x)`: Negation using `ln(0)` trick.
++  - `mul_cf(x, w)`: Optimized Constant-Weight multiplication (5 nodes).
++
++## [trs.rs](file:///my_data/engine/src/trs.rs)
++- **Role**: Term Rewriting System for EML algebraic simplification.
++- **Key Types**:
++  - `Rule`: Named rewriting rule with an `apply` function.
++- **Key Functions**:
++  - `rewrite(node)`: Main entry point. Applies rules bottom-up to fixpoint.
++  - `rewrite_internal(node, cache)`: DAG-aware recursive rewriter with memoization.
++  - `is_exp_pattern(node)`, `is_ln_pattern(node)`: High-level pattern recognizers.
++  - `get_rules()`: Catalog of implemented EML rules:
++    - `ln_exp_cancel`: `ln(exp(x)) -> x`
++    - `exp_ln_cancel`: `exp(ln(x)) -> x`
++    - `eml_ln_one_absorb`: `eml(ln(a), 1) -> a`
++    - `constant_e`: `eml(1, 1) -> Const(e)`
++    - `left_absorb`, `right_absorb`: Identities for simplifying `eml(ln(exp(x)), y)` etc.
++  - `rewrite_with_stats(node)`: Rewrites and returns node count reduction metrics.
++
++## [round_trip.rs](file:///my_data/engine/src/round_trip.rs)
++- **Role**: Lowering EML trees back to classical linear algebra operations.
++- **Key Types**:
++  - `FlatOp` (Enum): `LoadVar`, `LoadConst`, `Mul`, `Add`, `Sub`, `Div`, `Exp`, `Ln`, `MulConst`.
++  - `FlatProgram`: Sequence of `FlatOp` with a `result_slot`.
++  - `ClassicalOp` (Enum): Intermediate representation for recognized patterns.
++- **Key Functions**:
++  - `recognize_classical(node)`: Patterns EML nodes into `ClassicalOp` (e.g. recognizing `sub_eml` as `Sub`).
++  - `lower_to_flat_ops(tree)`: Recursively converts an EML tree to a `FlatProgram`.
++  - `round_trip_optimize(node)`: Applies classical identities (e.g. `ln(exp(x)) -> x`) across EML boundaries.
++  - `compile_to_ops(node)`: High-level entry point. Tries raw lowering, fallbacks to RT optimization.
++- **Execution**:
++  - `FlatProgram::execute(vars)`: Interprets the flat ops on a `HashMap` of variable values.
++
++## [dag_mmap.rs](file:///my_data/engine/src/dag_mmap.rs)
++- **Role**: SSD-backed out-of-core DAG engine for massive model audits.
++- **Key Types**:
++  - `CompactNode` (Struct, 24 bytes): `tag`, `left`, `right`, `hash`, `ref_count`.
++  - `MmapDag` (Struct): Manages `MmapMut`, capacity, and a RAM-based `hash_index`.
++- **Key Functions**:
++  - `MmapDag::create(path, capacity)`: Initializes or opens a memory-mapped file on disk (e.g. ZFS).
++  - `MmapDag::add_eml_node(l, r, hash)`: Global deduplication using the `hash_index`.
++  - `MmapDag::sharing_savings()`: Calculates global node reduction across all integrated trees.
++  - `add_tree_to_mmap_dag(dag, node, local_cache)`: Adapter for integrating `Arc<EmlNode>` trees into the persistent DAG.
++- **Note**: Pre-allocates space to avoid remapping overhead. Uses 24-byte aligned structs for high-performance IO.
++
++## [nn_layer.rs](file:///my_data/engine/src/nn_layer.rs)
++- **Role**: High-level builders for Neural Network components in EML.
++- **Key Functions**:
++  - `build_dot_product_eml(input, weights)`: Balanced-tree dot product implementation.
++    - **Stability**: Uses the **BIAS Trick** `(x + BIAS) * |w| - (BIAS * |w|)` to handle signed weights and avoid `ln(x)` domains issues.
++  - `preprocess_wq_offline(w_q, gamma, d_k, hidden)`: Absorbs layer normalization and scaling into weights at zero runtime cost.
++  - `build_and_optimize_sample(weights, sample_k)`: Full pipeline test (Build -> Optimize -> Statistics).
++- **Architecture**:
++  - Employs a balanced binary tree sum to keep depth O(log K), critical for numerical stability and parallel execution.
++  - Signed arithmetic is handled by partitioning terms into `pos_sum` and `neg_sum` and subtracting.
++
++## [fusions.rs](file:///my_data/engine/src/fusions.rs)
++- **Role**: Specialized operation fusions for Transformer layers.
++- **Key Functions**:
++  - `swiglu_fused(gate, up)`: Fuses SiLU(gate) * up into a single EML structure.
++    - **Note**: Requires `gate * up > 1.0` due to `ln(ln())` domain constraints.
++  - `residual_fused(ln_x, neg_out)`: Fuses addition of a residual connection when the operand is already in `ln(x)` form.
++  - `rmsnorm_gamma_fold(gamma, w_q)`: Offline folding of RMSNorm scaling into weights.
++  - `scale_weight_fold(w_q, d_k)`: Offline folding of attention scaling `1/sqrt(dk)` into weights.
++- **Objective**: Minimize runtime node count and avoid redundant `exp/ln` pairs across operation boundaries.
++
++## [tslp/](file:///my_data/engine/src/tslp/) (Tree Straight-Line Programs)
++- **Role**: Theoretical framework for parallel evaluation and grammar compression.
++- **Components**:
++  - `grammar.rs`: Converts EML DAGs into formal TSLP grammars.
++    - `TslpGrammar`: Collection of productions (`id -> eml(l,r)` or `id -> leaf`).
++    - `extract_grammar(root)`: Uses pointer identity to find shared non-terminals.
++  - `depth.rs`: Assigns parallel evaluation levels to DAG nodes.
++  - `scheduler.rs`: Builds "waves" of nodes for parallel GPU/Multi-core execution.
++  - `rake_compress.rs`: Implements the "Rake" transformation to reduce tree depth while preserving algebraic structure.
++  - `ganardi.rs`: Implementation of grammar-balancing algorithms (O(g) time).
++
++## [backends/](file:///my_data/engine/src/backends/)
++- **Role**: Execution environments for EML programs.
++- **Components**:
++  - `alu.rs`: Reference CPU implementation. Defines `BackendChoice` (EML vs ALU) and cycle costs.
++  - `wgsl.rs`: Shader generator for WebGPU/Vulkan.
++    - `generate_eml_kernel()`: Implements `fast_exp` (N=2) and `fast_ln` (N=3) using FMA.
++    - `generate_log_softmax_kernel()`: Native EML Log-Softmax implementation (`eml(ln(x_i), S)`).
++  - `naga_eml.rs`: Integration with the Naga shader compiler for validation.
++  - `vulkan_eml.rs`: Low-level Vulkan compute pipeline for EML execution.
++
++## [compress/](file:///my_data/engine/src/compress/)
++- **Role**: Model persistence and binary serialization.
++- **Key Functions**:
++  - `serialize_grammar(grammar, writer)`: Saves TSLP grammars to binary `EMLT` format.
++  - `deserialize_grammar(reader)`: Restores `TslpGrammar` from disk.
++  - `rebuild_tree(grammar)`: Reconstructs an `Arc<EmlNode>` DAG from a TSLP grammar.
++- **Format**:
++  - `EMLT` (v1): Header + Metadata (N productions, start index) + Compact productions (u8 tag + data).
++
++## [constant_fold.rs](file:///my_data/engine/src/constant_fold.rs)
++- **Role**: Constant folding and evaluation logic.
++- **Key Functions**:
++  - `try_evaluate(node, consts)`: Full numerical evaluation of constant subtrees.
++  - `fold_constants(node, consts)`: Recursive transformation to collapse constant nodes into `EmlNode::Const`.
++  - `mul_with_const_weight(x, w)`: Specifically optimizes constant multiplication at the structural level.
++  - `asis_preprocess_weights(weights)`: Utility for ASIS-compatible weight normalization.
++
++## [asis.rs](file:///my_data/engine/src/asis.rs)
++- **Role**: Algebraic Structural Identity Synthesis (ASIS) implementation.
++- **Key Functions**:
++  - `build_asis_dot_product(inputs, weights)`: Implements dot product via accumulation by subtraction (`A1B1 - (-A2)B2 - ...`).
++  - `verify_asis_correctness(inputs, weights)`: Numerical validation against naive sum.
++- **Theory**: ASIS exploits structural symmetry to reduce internal EML node count by pre-negating weights offline.
++
++## [bin/](file:///my_data/engine/src/bin/) (Applications & Utilities)
++- **Audits**:
++  - `full_layer_unified_v3.rs`: Current production audit binary for TinyLlama. Uses `MmapDag` on ZFS.
++  - `full_layer_unified.rs`: V1 audit (deprecated, RAM-intensive).
++- **Verification**:
++  - `emlm_parity.rs`: Numerical parity test between EML execution and ALU matmul.
++  - `full_layer_parity.rs`: Parity test for entire Transformer layers.
++  - `math_verification.rs`: Basic EML algebraic identity tests.
++- **Benchmarks**:
++  - `eml_benchmark.rs`: Microbenchmarks for single EML operations.
++  - `layer_benchmark.rs`: Latency measurements for full layers.
++- **Utilities**:
++  - `eml_compress.rs`: Tool for generating `.emlm` compressed model files.
++  - `test_mmap_dag.rs`: Unit tests for the out-of-core DAG engine.
++
++## [loader/gguf.rs](file:///my_data/engine/src/loader/gguf.rs)
++- **Role**: Minimal GGUF format loader.
++- **Key Types**:
++  - `GgufLoader`: File handle and tensor metadata management.
++  - `TensorInfo`: Shape, offset, and dtype (`F32`, `F16`) information.
++- **Key Functions**:
++  - `load_f32(name)`: Reads tensor and converts/unpacks to `f32`.
++  - `load_layer(idx)`: Helper for bulk-loading all weights for a Transformer layer.
++
++## [polar.rs](file:///my_data/engine/src/polar.rs)
++- **Role**: Research into Polar Coordinate Representation for RoPE.
++- **Theory**: Polar representation `(ln(r), φ)` makes RoPE a 0-node addition.
++- **Key Types**:
++  - `PolarVector`: Holds `ln_r` and `phi`.
++- **Key Functions**:
++  - `apply_rope(angle)`: Additive rotation.
++  - `dot(other)`: Polar-space dot product.
++
++## [cost_model.rs](file:///my_data/engine/src/cost_model.rs)
++- **Role**: Theoretical performance and complexity analyzer.
++- **Constants**:
++  - `exp=3`, `ln=7`, `sub=11`, `mul=17`, `add=19`.
++- **Key Functions**:
++  - `tinyllama_layer_reduction()`: Calculates ~61% node reduction for TinyLlama.
++  - `log_softmax_dag(n)`: Shows Log-Softmax is native to EML.
++
++## [dag.rs](file:///my_data/engine/src/dag.rs)
++- **Role**: In-memory DAG representation.
++- **Key Types**:
++  - `EmlDag`: Structural hash index for RAM-based deduplication.
++- **Key Functions**:
++  - `structural_hash(node)`: Cached structural hashing.
++  - `add_node(node)`: Deduplicates nodes using hash.
++
++## [tslp/depth.rs](file:///my_data/engine/src/tslp/depth.rs)
++- **Key Functions**:
++  - `assign_depths(root)`: Assigns parallel evaluation levels to nodes.
++
++## [tslp/scheduler.rs](file:///my_data/engine/src/tslp/scheduler.rs)
++- **Key Types**:
++  - `TslpSchedule`: Groups nodes by depth for parallel waves.
++
++## [tslp/executor.rs](file:///my_data/engine/src/tslp/executor.rs)
++- **Key Functions**:
++  - `simulate_execution(schedule)`: Dry-run for parallel schedule performance.
++
++## [tslp/rake_compress.rs](file:///my_data/engine/src/tslp/rake_compress.rs)
++- **Key Functions**:
++  - `rake_compress(node)`: Heuristic depth reduction via "Rake" and "Compress" phases.
++
++## [tslp/parallel_prefix.rs](file:///my_data/engine/src/tslp/parallel_prefix.rs)
++- **Key Functions**:
++  - `parallel_prefix_sum(terms)`: Balanced binary tree summation.
++  - `build_balanced_dot_product(inputs, weights)`: O(log K) depth dot product.
++
++## [tslp/ganardi.rs](file:///my_data/engine/src/tslp/ganardi.rs)
++- **Role**: TSLP grammar balancing (O(g log g)).
++- **Key Functions**:
++  - `balance_grammar(grammar)`: Guaranteed O(log N) depth balancing.
++
++## [compress/lift.rs](file:///my_data/engine/src/compress/lift.rs)
++- **Key Functions**:
++  - `lift_bytes(data)`: Converts raw byte data into EML structures for grammar lifting.
++
++## [compress/json_loader.rs](file:///my_data/engine/src/compress/json_loader.rs)
++- **Role**: Helper for loading weights from JSON format during audit/compression.
++
+diff --git a/implementation_plan.md b/implementation_plan.md
+index da49edc..6c4b797 100644
+--- a/implementation_plan.md
++++ b/implementation_plan.md
+@@ -52,8 +52,33 @@ Implement a high-performance, memory-efficient DAG engine that uses `mmap` for n
+ 3. **Cross-row Deduplication Test**:
+    - Verify that shared `x_vars` (same `Arc` pointers used in different trees/rows) are correctly identified as the same node in the global DAG despite having separate local caches.
+ 
+-### Manual Verification
+-- Run `cargo run --bin full_layer_unified_v3 --release`.
+-- Monitor RAM usage (should stay around 1.5-2.0 GB).
+-- Monitor Disk IO (ZFS should show compression benefits).
+ - Verify the final `sharing_savings()` metric for the global model.
++
++---
++
++# Phase 4: EMLM (EML Model Format)
++
++## Problem: Space Efficiency
++A naive EML dump (FlatProgram per row) is 10x larger than GGUF. EMLM solves this by separating **Structure (Template)** from **Weights**.
++
++## EMLM Specification (v1.0)
++- **Header**: Metadata (layers, dims, heads).
++- **Templates**: One `FlatProgram` per operation type (e.g., Q-proj). Instead of `Const(f32)`, ops use `weight_idx (u16)`.
++- **Weight Tensors**: Raw f16 row-major blocks.
++- **Execution**: `y[row] = template.execute(input, weights[row])`.
++
++## Priority Roadmap
++
++### Day 1: emlm_parity.rs (The "Hard" Test)
++- Build a binary that takes a row, builds the EML tree, compiles to `FlatProgram`, executes it, and compares the result vs. standard MatMul.
++- Goal: `max_diff < 1e-3`.
++
++### Day 2-5: EMLM Implementation
++- **EmlmWriter**: First version: Naive (JSON/Binary per row). Second version: Optimized (Template + f16 weights).
++- **EmlmReader**: Fast loader with mmap support for weights.
++
++### Day 6+: Full Model Compilation
++- Compile all 22 layers of TinyLlama-1.1B into a single `.emlm` file (~1.85 GB).
++
++## Scientific Impact for PAPER.md
++> "Empirical audit of TinyLlama-1.1B Layer 0 (51M parameters) shows 35.54% node reduction (row-by-row) and XX% unified structural reduction. Parity tests confirm max_diff < 1e-3 across all tested rows."
+diff --git a/results_unified_v3.txt b/results_unified_v3.txt
+new file mode 100644
+index 0000000..38beb84
+--- /dev/null
++++ b/results_unified_v3.txt
+@@ -0,0 +1,53 @@
++   Compiling eml-trs v0.1.0 (/my_data/engine)
++warning: variable does not need to be mutable
++  --> src/bin/full_layer_unified_v3.rs:43:9
++   |
++43 |     let mut audit_norm = |dag: &mut MmapDag, name: &str, weights: &[f32]| {
++   |         ----^^^^^^^^^^
++   |         |
++   |         help: remove this `mut`
++   |
++   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
++
++warning: variable does not need to be mutable
++  --> src/bin/full_layer_unified_v3.rs:67:9
++   |
++67 |     let mut integrate_matrix = |dag: &mut MmapDag, name: &str, weights: &Vec<Vec<f32>>, inputs: &Vec<Arc<EmlNode>>| {
++   |         ----^^^^^^^^^^^^^^^^
++   |         |
++   |         help: remove this `mut`
++
++warning: `eml-trs` (bin "full_layer_unified_v3") generated 2 warnings (run `cargo fix --bin "full_layer_unified_v3" -p eml-trs` to apply 2 suggestions)
++    Finished `release` profile [optimized] target(s) in 4.52s
++     Running `target/release/full_layer_unified_v3`
++=== EML 1:1 UNIFIED GLOBAL DAG AUDIT V3 (Out-of-Core) ===
++Strategy: Mmap-backed Global DAG on ZFS.
++Deduplication: Structural Hashing + Per-Tree Local Cache.
++
++MmapDag initialized at /vectorlegis_ssd_pool/eml_working/global_dag_v3.bin. Capacity: 500000000 nodes.
++Loaded 374MB weights in 5.77752527s
++Auditing RMSNorm (Fusion 3)...
++  Norm attn_norm integrated.
++  Norm ffn_norm integrated.
++Integrating matrix: q          (2048 rows)...
++  Progress: 1024/2048 (Unique nodes: 25914271)
++Integrating matrix: k          (256 rows)...
++Integrating matrix: v          (256 rows)...
++Integrating matrix: o          (2048 rows)...
++  Progress: 1024/2048 (Unique nodes: 82440065)
++Integrating FFN Block (SwiGLU)...
++  FFN Progress: 1024/5632 (Unique nodes: 137479598)
++  FFN Progress: 2048/5632 (Unique nodes: 168133266)
++  FFN Progress: 3072/5632 (Unique nodes: 195763690)
++  FFN Progress: 4096/5632 (Unique nodes: 221271341)
++  FFN Progress: 5120/5632 (Unique nodes: 245291402)
++Integrating matrix: down       (2048 rows)...
++  Progress: 1024/2048 (Unique nodes: 327354164)
++
++=== FINAL UNIFIED V3 AUDIT VERDICT ===
++Execution Time:     39676.37119088s
++Total Naive Nodes:        1585376768
++Total Unique Nodes:        390045050
++Sharing Savings:          3654626190 nodes
++FINAL REDUCTION:              75.40%
++SSD Storage used:   9.36 GB
+diff --git a/src/bin/emlm_parity.rs b/src/bin/emlm_parity.rs
+new file mode 100644
+index 0000000..2327d6a
+--- /dev/null
++++ b/src/bin/emlm_parity.rs
+@@ -0,0 +1,72 @@
++use eml_trs::ast::*;
++use eml_trs::nn_layer::build_dot_product_eml;
++use eml_trs::round_trip::{compile_to_ops, FlatProgram};
++use serde::{Deserialize, Serialize};
++use std::fs::File;
++use std::io::BufReader;
++use std::sync::Arc;
++use std::collections::HashMap;
++
++#[derive(Serialize, Deserialize)]
++struct LayerData {
++    hidden_dim: usize,
++    weights: std::collections::HashMap<String, Vec<Vec<f32>>>,
++}
++
++fn main() {
++    println!("=== EMLM NUMERICAL PARITY TEST ===");
++    println!("Goal: Verify that EML execution matches ALU matmul within float tolerance.\n");
++
++    // 1. Load weights
++    let file = File::open("models/layer0_full.json").expect("Missing layer0_full.json");
++    let reader = BufReader::new(file);
++    let data: LayerData = serde_json::from_reader(reader).expect("Failed to parse weights");
++    
++    let hidden = data.hidden_dim;
++    let x_vars: Vec<Arc<EmlNode>> = (0..hidden).map(|i| var(&format!("x{}", i))).collect();
++    
++    // Test context: First row of Q-projection
++    let matrix_name = "q";
++    let row_idx = 0;
++    let weights = &data.weights[matrix_name][row_idx];
++    
++    println!("Testing Matrix: {}, Row: {}", matrix_name, row_idx);
++
++    // 2. Reference ALU calculation (Standard f32)
++    let input_f32: Vec<f32> = (0..hidden).map(|i| (i as f32 * 0.01).sin()).collect(); // Dummy input
++    let mut alu_sum = 0.0f32;
++    for i in 0..hidden {
++        alu_sum += input_f32[i] * weights[i];
++    }
++    println!("  ALU Reference:  {:.10}", alu_sum);
++
++    // 3. EML Execution
++    // a) Build Tree
++    let tree = build_dot_product_eml(&x_vars, weights);
++    
++    // b) Compile to FlatProgram
++    let program = compile_to_ops(tree);
++    println!("  EML FlatProgram: {} ops", program.ops.len());
++    
++    // c) Execute
++    // Prepare HashMap for variables
++    let mut vars = HashMap::new();
++    for i in 0..hidden {
++        vars.insert(format!("x{}", i), input_f32[i] as f64);
++    }
++    
++    let eml_result_f64 = program.execute(&vars).expect("Execution failed");
++    let eml_result = eml_result_f64 as f32;
++    println!("  EML Execution:  {:.10}", eml_result);
++
++    // 4. Verification
++    let diff = (eml_result - alu_sum).abs();
++    println!("\n  Numerical Diff: {:.10e}", diff);
++    
++    if diff < 1e-3 {
++        println!("  [SUCCESS] Parity achieved (within bf16/f32 tolerance).");
++    } else {
++        println!("  [FAILURE] Numerical divergence detected!");
++        std::process::exit(1);
++    }
++}
+diff --git a/src/bin/full_layer_unified_v3.rs b/src/bin/full_layer_unified_v3.rs
+new file mode 100644
+index 0000000..6d8501f
+--- /dev/null
++++ b/src/bin/full_layer_unified_v3.rs
+@@ -0,0 +1,128 @@
++use eml_trs::ast::*;
++use eml_trs::nn_layer::build_dot_product_eml;
++use eml_trs::dag_mmap::*;
++use serde::{Deserialize, Serialize};
++use std::fs::File;
++use std::io::BufReader;
++use std::sync::Arc;
++use std::time::Instant;
++use std::collections::HashMap;
++
++#[derive(Serialize, Deserialize)]
++struct LayerData {
++    hidden_dim: usize,
++    weights: std::collections::HashMap<String, Vec<Vec<f32>>>,
++}
++
++fn main() {
++    println!("=== EML 1:1 UNIFIED GLOBAL DAG AUDIT V3 (Out-of-Core) ===");
++    println!("Strategy: Mmap-backed Global DAG on ZFS.");
++    println!("Deduplication: Structural Hashing + Per-Tree Local Cache.\n");
++    
++    let dag_path = "/vectorlegis_ssd_pool/eml_working/global_dag_v3.bin";
++    let initial_capacity = 500_000_000u64; // 500M nodes = ~12 GB
++    
++    let mut dag = MmapDag::create(dag_path, initial_capacity)
++        .expect("Failed to create MmapDag on ZFS");
++    println!("MmapDag initialized at {}. Capacity: {} nodes.", dag_path, initial_capacity);
++
++    let t_load = Instant::now();
++    let file = File::open("models/layer0_full.json").expect("Missing layer0_full.json");
++    let reader = BufReader::new(file);
++    let data: LayerData = serde_json::from_reader(reader).expect("Failed to parse weights");
++    println!("Loaded 374MB weights in {:?}", t_load.elapsed());
++
++    let hidden = data.hidden_dim;
++    let x_vars: Vec<Arc<EmlNode>> = (0..hidden).map(|i| var(&format!("x{}", i))).collect();
++
++    let mut total_naive_count: u64 = 0;
++    let t_audit = Instant::now();
++
++    // 1. RMSNorm Audit
++    println!("Auditing RMSNorm (Fusion 3)...");
++    let mut audit_norm = |dag: &mut MmapDag, name: &str, weights: &[f32]| {
++        let d = weights.len();
++        let mut x2_terms = Vec::new();
++        for i in 0..d {
++            let xv = var(&format!("x{}", i));
++            x2_terms.push(exp_node(mul_cf(ln_node(xv), 2.0)));
++        }
++        let mean_x2 = mul_cf(build_simple_sum(&x2_terms), 1.0 / d as f64);
++        let inv_rms = exp_node(mul_cf(ln_node(mean_x2), -0.5));
++
++        for i in 0..d {
++            let x_i = var(&format!("x{}", i));
++            let out = mul_safe_stable(x_i, inv_rms.clone());
++            let mut local_cache = HashMap::new();
++            add_tree_to_mmap_dag(dag, &out, &mut local_cache);
++        }
++        println!("  Norm {} integrated.", name);
++        (66 * d) as u64
++    };
++
++    total_naive_count += audit_norm(&mut dag, "attn_norm", &data.weights["attn_norm"][0]);
++    total_naive_count += audit_norm(&mut dag, "ffn_norm", &data.weights["ffn_norm"][0]);
++
++    // 2. Matrix Audit
++    let mut integrate_matrix = |dag: &mut MmapDag, name: &str, weights: &Vec<Vec<f32>>, inputs: &Vec<Arc<EmlNode>>| {
++        let rows = weights.len();
++        let cols = inputs.len();
++        let naive_per_row = (36 * cols - 19) as u64;
++        
++        println!("Integrating matrix: {:<10} ({} rows)...", name, rows);
++        for i in 0..rows {
++            if i > 0 && i % 1024 == 0 {
++                println!("  Progress: {:>4}/{} (Unique nodes: {})", i, rows, dag.unique_node_count());
++            }
++            let tree = build_dot_product_eml(inputs, &weights[i]);
++            let mut local_cache = HashMap::new();
++            add_tree_to_mmap_dag(dag, &tree, &mut local_cache);
++        }
++        (rows as u64 * naive_per_row) as u64
++    };
++
++    for proj in ["q", "k", "v", "o"] {
++        total_naive_count += integrate_matrix(&mut dag, proj, &data.weights[proj], &x_vars);
++    }
++
++    // 3. FFN Audit
++    println!("Integrating FFN Block (SwiGLU)...");
++    let w_gate = &data.weights["gate"];
++    let w_up = &data.weights["up"];
++    let w_down = &data.weights["down"];
++    for i in 0..w_gate.len() {
++        if i > 0 && i % 1024 == 0 {
++            println!("  FFN Progress: {:>4}/{} (Unique nodes: {})", i, w_gate.len(), dag.unique_node_count());
++        }
++        let g = build_dot_product_eml(&x_vars, &w_gate[i]);
++        let u = build_dot_product_eml(&x_vars, &w_up[i]);
++        let fused = eml_trs::fusions::swiglu_fused(g, u);
++        let mut local_cache = HashMap::new();
++        add_tree_to_mmap_dag(&mut dag, &fused, &mut local_cache);
++    }
++    total_naive_count += (w_gate.len() * (36 * hidden - 19) * 2) as u64;
++
++    let gate_vars: Vec<Arc<EmlNode>> = (0..w_gate.len()).map(|i| var(&format!("g{}", i))).collect();
++    total_naive_count += integrate_matrix(&mut dag, "down", w_down, &gate_vars);
++
++    println!("\n=== FINAL UNIFIED V3 AUDIT VERDICT ===");
++    let total_opt = dag.unique_node_count() as u64;
++    println!("Execution Time:     {:?}", t_audit.elapsed());
++    println!("Total Naive Nodes:  {:>16}", total_naive_count);
++    println!("Total Unique Nodes: {:>16}", total_opt);
++    println!("Sharing Savings:    {:>16} nodes", dag.sharing_savings());
++    println!("FINAL REDUCTION:    {:>15.2}%", (1.0 - total_opt as f64 / total_naive_count as f64) * 100.0);
++    println!("SSD Storage used:   {:.2} GB", (total_opt * 24) as f64 / 1e9);
++}
++
++fn mul_safe_stable(a: Arc<EmlNode>, b: Arc<EmlNode>) -> Arc<EmlNode> {
++    let a_shifted = add_eml(a, konst(4.0));
++    let product = mul_eml(a_shifted, b.clone());
++    sub_eml(product, mul_eml(konst(4.0), b))
++}
++
++fn build_simple_sum(terms: &[Arc<EmlNode>]) -> Arc<EmlNode> {
++    if terms.len() == 1 { return terms[0].clone(); }
++    let mid = terms.len() / 2;
++    add_eml(build_simple_sum(&terms[..mid]), build_simple_sum(&terms[mid..]))
++}
+diff --git a/src/bin/test_mmap_dag.rs b/src/bin/test_mmap_dag.rs
+new file mode 100644
+index 0000000..169f0af
+--- /dev/null
++++ b/src/bin/test_mmap_dag.rs
+@@ -0,0 +1,64 @@
++use eml_trs::ast::*;
++use eml_trs::dag_mmap::*;
++use std::sync::Arc;
++use std::collections::HashMap;
++
++fn main() {
++    println!("=== Testing MmapDag V3 ===");
++    let path = "/vectorlegis_ssd_pool/eml_working/test_dag.bin";
++    let mut dag = MmapDag::create(path, 1000).expect("Failed to create test dag");
++
++    // Test 1: Basic deduplication
++    println!("Test 1: Basic deduplication...");
++    let x = var("x");
++    let mut local1 = HashMap::new();
++    let id1 = add_tree_to_mmap_dag(&mut dag, &x, &mut local1);
++    
++    let mut local2 = HashMap::new();
++    let id2 = add_tree_to_mmap_dag(&mut dag, &x, &mut local2);
++    
++    assert_eq!(id1, id2, "x should have same ID across different local caches");
++    assert_eq!(dag.unique_node_count(), 1, "Should have exactly 1 node");
++    println!("  [OK]");
++
++    // Test 2: Complex tree deduplication
++    println!("Test 2: Complex tree deduplication...");
++    let y = var("y");
++    let tree1 = eml(x.clone(), y.clone());
++    let tree2 = eml(x.clone(), y.clone());
++    
++    let mut local3 = HashMap::new();
++    add_tree_to_mmap_dag(&mut dag, &tree1, &mut local3);
++    
++    let mut local4 = HashMap::new();
++    add_tree_to_mmap_dag(&mut dag, &tree2, &mut local4);
++    
++    // Unique nodes: x, y, eml(x,y) = 3
++    assert_eq!(dag.unique_node_count(), 3);
++    println!("  [OK]");
++
++    // Test 3: x_vars cross-row sharing (the "Claude Test")
++    println!("Test 3: x_vars cross-row sharing...");
++    let x_vars: Vec<Arc<EmlNode>> = (0..10).map(|i| var(&format!("x{}", i))).collect();
++    
++    // Row 1
++    {
++        let mut local = HashMap::new();
++        for x_i in &x_vars {
++            add_tree_to_mmap_dag(&mut dag, x_i, &mut local);
++        }
++    }
++    let count_after_row1 = dag.unique_node_count();
++    
++    // Row 2 (identical x_vars)
++    {
++        let mut local = HashMap::new();
++        for x_i in &x_vars {
++            add_tree_to_mmap_dag(&mut dag, x_i, &mut local);
++        }
++    }
++    assert_eq!(dag.unique_node_count(), count_after_row1, "x_vars should NOT increase node count in Row 2");
++    println!("  [OK]");
++
++    println!("\nALL TESTS PASSED! MmapDag is scientifically sound.");
++}
+diff --git a/src/dag_mmap.rs b/src/dag_mmap.rs
+new file mode 100644
+index 0000000..20a8d97
+--- /dev/null
++++ b/src/dag_mmap.rs
+@@ -0,0 +1,249 @@
++use std::collections::HashMap;
++use std::fs::OpenOptions;
++use memmap2::MmapMut;
++use crate::ast::EmlNode;
++use std::sync::Arc;
++
++/// 24-byte node stored on disk via mmap.
++/// Compact and aligned for efficient access.
++#[repr(C)]
++#[derive(Clone, Copy, Debug)]
++pub struct CompactNode {
++    pub tag: u8,          // 0=One, 1=Var, 2=Const, 3=Eml
++    pub _pad: [u8; 3],
++    pub left: u32,        // Eml: left child index; Var: var_id; Const: const_id
++    pub right: u32,       // Eml: right child index; else: 0
++    pub hash: u64,        // structural hash for global deduplication
++    pub ref_count: u32,   // global sharing counter
++}
++
++/// Out-of-core DAG engine.
++/// - Nodes: Stored on ZFS SSD via mmap (O(1) access).
++/// - Hash Index: Stored in RAM (O(1) lookup).
++pub struct MmapDag {
++    _file: std::fs::File,
++    mmap: MmapMut,
++    capacity: u64,
++    
++    // --- RAM State ---
++    pub node_count: u32,
++    hash_index: HashMap<u64, u32>,   // hash -> node_id
++    var_names: Vec<String>,           // var_id -> name
++    const_values: Vec<f64>,           // const_id -> value
++}
++
++impl MmapDag {
++    /// Creates or opens a MmapDag.
++    /// Initial capacity is specified in number of nodes.
++    pub fn create(path: &str, initial_capacity: u64) -> std::io::Result<Self> {
++        let file_size = 8 + (initial_capacity * 24); // 8B magic/header + nodes
++        let file = OpenOptions::new()
++            .read(true)
++            .write(true)
++            .create(true)
++            .open(path)?;
++        
++        file.set_len(file_size)?;
++        let mmap = unsafe { MmapMut::map_mut(&file)? };
++        
++        Ok(MmapDag {
++            _file: file,
++            mmap,
++            capacity: initial_capacity,
++            node_count: 0,
++            hash_index: HashMap::with_capacity(initial_capacity as usize), 
++            var_names: Vec::new(),
++            const_values: Vec::new(),
++        })
++    }
++
++    /// Gets a node from the mmap by ID.
++    #[inline(always)]
++    pub fn get_node(&self, id: u32) -> &CompactNode {
++        let offset = 8 + (id as usize * 24);
++        unsafe {
++            let ptr = self.mmap.as_ptr().add(offset) as *const CompactNode;
++            &*ptr
++        }
++    }
++
++    /// Mutably gets a node from the mmap (internal use for ref_count).
++    #[inline(always)]
++    fn get_node_mut(&mut self, id: u32) -> &mut CompactNode {
++        let offset = 8 + (id as usize * 24);
++        unsafe {
++            let ptr = self.mmap.as_mut_ptr().add(offset) as *mut CompactNode;
++            &mut *ptr
++        }
++    }
++
++    /// Pushes a new node to the storage.
++    fn push_node(&mut self, node: CompactNode) -> u32 {
++        if self.node_count as u64 >= self.capacity {
++            panic!("MmapDag capacity exceeded ({})", self.capacity);
++        }
++        let id = self.node_count;
++        let offset = 8 + (id as usize * 24);
++        
++        unsafe {
++            let ptr = self.mmap.as_mut_ptr().add(offset) as *mut CompactNode;
++            std::ptr::write(ptr, node);
++        }
++        
++        self.node_count += 1;
++        id
++    }
++
++    pub fn intern_var(&mut self, name: &str) -> u32 {
++        // Simple linear search for now, vars are few (e.g. 2048)
++        if let Some(id) = self.var_names.iter().position(|n| n == name) {
++            return id as u32;
++        }
++        let id = self.var_names.len() as u32;
++        self.var_names.push(name.to_string());
++        id
++    }
++
++    pub fn intern_const(&mut self, v: f64) -> u32 {
++        let bits = v.to_bits();
++        for (id, &existing) in self.const_values.iter().enumerate() {
++            if existing.to_bits() == bits {
++                return id as u32;
++            }
++        }
++        let id = self.const_values.len() as u32;
++        self.const_values.push(v);
++        id
++    }
++
++    /// Adds a node to the DAG or returns existing ID.
++    pub fn add_eml_node(&mut self, left: u32, right: u32, hash: u64) -> u32 {
++        if let Some(&id) = self.hash_index.get(&hash) {
++            self.get_node_mut(id).ref_count += 1;
++            return id;
++        }
++        
++        let node = CompactNode {
++            tag: 3,
++            _pad: [0; 3],
++            left,
++            right,
++            hash,
++            ref_count: 1,
++        };
++        
++        let id = self.push_node(node);
++        self.hash_index.insert(hash, id);
++        id
++    }
++
++    /// Special cases for leaf node creation in the DAG
++    pub fn add_leaf_node(&mut self, tag: u8, val_id: u32, hash: u64) -> u32 {
++        if let Some(&id) = self.hash_index.get(&hash) {
++            self.get_node_mut(id).ref_count += 1;
++            return id;
++        }
++        
++        let node = CompactNode {
++            tag,
++            _pad: [0; 3],
++            left: val_id,
++            right: 0,
++            hash,
++            ref_count: 1,
++        };
++        
++        let id = self.push_node(node);
++        self.hash_index.insert(hash, id);
++        id
++    }
++
++    pub fn unique_node_count(&self) -> u32 {
++        self.node_count
++    }
++
++    pub fn sharing_savings(&self) -> u64 {
++        let mut savings = 0u64;
++        for id in 0..self.node_count {
++            let node = self.get_node(id);
++            savings += (node.ref_count.saturating_sub(1)) as u64;
++        }
++        savings
++    }
++}
++
++// --- Hashing Helpers (matching the logic in full_layer_unified) ---
++
++pub fn hash_one() -> u64 {
++    use std::collections::hash_map::DefaultHasher;
++    use std::hash::{Hash, Hasher};
++    let mut h = DefaultHasher::new();
++    "one".hash(&mut h);
++    h.finish()
++}
++
++pub fn hash_var(var_id: u32) -> u64 {
++    use std::collections::hash_map::DefaultHasher;
++    use std::hash::{Hash, Hasher};
++    let mut h = DefaultHasher::new();
++    "var".hash(&mut h);
++    var_id.hash(&mut h);
++    h.finish()
++}
++
++pub fn hash_const(bits: u64) -> u64 {
++    use std::collections::hash_map::DefaultHasher;
++    use std::hash::{Hash, Hasher};
++    let mut h = DefaultHasher::new();
++    "const".hash(&mut h);
++    bits.hash(&mut h);
++    h.finish()
++}
++
++pub fn hash_eml(left: u32, right: u32) -> u64 {
++    use std::collections::hash_map::DefaultHasher;
++    use std::hash::{Hash, Hasher};
++    let mut h = DefaultHasher::new();
++    left.hash(&mut h);
++    right.hash(&mut h);
++    h.finish()
++}
++
++/// Adapter to add an existing Arc<EmlNode> tree to the MmapDag.
++/// Uses a local cache per-call to handle sharing within the tree efficiently.
++pub fn add_tree_to_mmap_dag(
++    dag: &mut MmapDag,
++    node: &Arc<EmlNode>,
++    local_cache: &mut HashMap<usize, u32>,
++) -> u32 {
++    let ptr = Arc::as_ptr(node) as usize;
++    if let Some(&id) = local_cache.get(&ptr) {
++        return id;
++    }
++
++    let id = match node.as_ref() {
++        EmlNode::One => {
++            let hash = hash_one();
++            dag.add_leaf_node(0, 0, hash)
++        }
++        EmlNode::Var(name) => {
++            let var_id = dag.intern_var(name);
++            let hash = hash_var(var_id);
++            dag.add_leaf_node(1, var_id, hash)
++        }
++        EmlNode::Const(v) => {
++            let const_id = dag.intern_const(*v);
++            let hash = hash_const(v.to_bits());
++            dag.add_leaf_node(2, const_id, hash)
++        }
++        EmlNode::Eml(l, r) => {
++            let l_id = add_tree_to_mmap_dag(dag, l, local_cache);
++            let r_id = add_tree_to_mmap_dag(dag, r, local_cache);
++            let hash = hash_eml(l_id, r_id);
++            dag.add_eml_node(l_id, r_id, hash)
++        }
++    };
++
++    local_cache.insert(ptr, id);
++    id
++}
+diff --git a/src/lib.rs b/src/lib.rs
+index 05f29a9..73dcb1d 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -11,3 +11,4 @@ pub mod polar;
+ pub mod nn_layer;
+ pub mod tslp;
+ pub mod compress;
++pub mod dag_mmap;
+diff --git a/staged_changes_v3.txt b/staged_changes_v3.txt
+new file mode 100644
+index 0000000..a65fe8f
+--- /dev/null
++++ b/staged_changes_v3.txt
+@@ -0,0 +1,508 @@
++diff --git a/Cargo.lock b/Cargo.lock
++index e688efd..add9713 100644
++--- a/Cargo.lock
+++++ b/Cargo.lock
++@@ -232,6 +232,7 @@ dependencies = [
++  "eml-trs-macro",
++  "flate2",
++  "futures",
+++ "memmap2",
++  "naga",
++  "serde",
++  "serde_json",
++@@ -679,6 +680,15 @@ version = "2.8.0"
++ source = "registry+https://github.com/rust-lang/crates.io-index"
++ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
++ 
+++[[package]]
+++name = "memmap2"
+++version = "0.9.10"
+++source = "registry+https://github.com/rust-lang/crates.io-index"
+++checksum = "714098028fe011992e1c3962653c96b2d578c4b4bce9036e15ff220319b1e0e3"
+++dependencies = [
+++ "libc",
+++]
+++
++ [[package]]
++ name = "metal"
++ version = "0.28.0"
++diff --git a/Cargo.toml b/Cargo.toml
++index 2208bf5..274e09b 100644
++--- a/Cargo.toml
+++++ b/Cargo.toml
++@@ -19,6 +19,7 @@ flate2 = "1.0"
++ zstd = "0.13"
++ serde = { version = "1.0", features = ["derive"] }
++ serde_json = "1.0"
+++memmap2 = "0.9"
++ 
++ [dev-dependencies]
++ 
++diff --git a/src/bin/full_layer_unified_v3.rs b/src/bin/full_layer_unified_v3.rs
++new file mode 100644
++index 0000000..130b580
++--- /dev/null
+++++ b/src/bin/full_layer_unified_v3.rs
++@@ -0,0 +1,128 @@
+++use eml_trs::ast::*;
+++use eml_trs::nn_layer::build_dot_product_eml;
+++use eml_trs::dag_mmap::*;
+++use serde::{Deserialize, Serialize};
+++use std::fs::File;
+++use std::io::BufReader;
+++use std::sync::Arc;
+++use std::time::Instant;
+++use std::collections::HashMap;
+++
+++#[derive(Serialize, Deserialize)]
+++struct LayerData {
+++    hidden_dim: usize,
+++    weights: std::collections::HashMap<String, Vec<Vec<f32>>>,
+++}
+++
+++fn main() {
+++    println!("=== EML 1:1 UNIFIED GLOBAL DAG AUDIT V3 (Out-of-Core) ===");
+++    println!("Strategy: Mmap-backed Global DAG on ZFS.");
+++    println!("Deduplication: Structural Hashing + Per-Tree Local Cache.\n");
+++    
+++    let dag_path = "/vectorlegis_ssd_pool/eml_working/global_dag_v3.bin";
+++    let initial_capacity = 200_000_000u64; // 200M nodes = ~4.8 GB
+++    
+++    let mut dag = MmapDag::create(dag_path, initial_capacity)
+++        .expect("Failed to create MmapDag on ZFS");
+++    println!("MmapDag initialized at {}. Capacity: {} nodes.", dag_path, initial_capacity);
+++
+++    let t_load = Instant::now();
+++    let file = File::open("models/layer0_full.json").expect("Missing layer0_full.json");
+++    let reader = BufReader::new(file);
+++    let data: LayerData = serde_json::from_reader(reader).expect("Failed to parse weights");
+++    println!("Loaded 374MB weights in {:?}", t_load.elapsed());
+++
+++    let hidden = data.hidden_dim;
+++    let x_vars: Vec<Arc<EmlNode>> = (0..hidden).map(|i| var(&format!("x{}", i))).collect();
+++
+++    let mut total_naive_count: u64 = 0;
+++    let t_audit = Instant::now();
+++
+++    // 1. RMSNorm Audit
+++    println!("Auditing RMSNorm (Fusion 3)...");
+++    let mut audit_norm = |dag: &mut MmapDag, name: &str, weights: &[f32]| {
+++        let d = weights.len();
+++        let mut x2_terms = Vec::new();
+++        for i in 0..d {
+++            let xv = var(&format!("x{}", i));
+++            x2_terms.push(exp_node(mul_cf(ln_node(xv), 2.0)));
+++        }
+++        let mean_x2 = mul_cf(build_simple_sum(&x2_terms), 1.0 / d as f64);
+++        let inv_rms = exp_node(mul_cf(ln_node(mean_x2), -0.5));
+++
+++        for i in 0..d {
+++            let x_i = var(&format!("x{}", i));
+++            let out = mul_safe_stable(x_i, inv_rms.clone());
+++            let mut local_cache = HashMap::new();
+++            add_tree_to_mmap_dag(dag, &out, &mut local_cache);
+++        }
+++        println!("  Norm {} integrated.", name);
+++        (66 * d) as u64
+++    };
+++
+++    total_naive_count += audit_norm(&mut dag, "attn_norm", &data.weights["attn_norm"][0]);
+++    total_naive_count += audit_norm(&mut dag, "ffn_norm", &data.weights["ffn_norm"][0]);
+++
+++    // 2. Matrix Audit
+++    let mut integrate_matrix = |dag: &mut MmapDag, name: &str, weights: &Vec<Vec<f32>>, inputs: &Vec<Arc<EmlNode>>| {
+++        let rows = weights.len();
+++        let cols = inputs.len();
+++        let naive_per_row = (36 * cols - 19) as u64;
+++        
+++        println!("Integrating matrix: {:<10} ({} rows)...", name, rows);
+++        for i in 0..rows {
+++            if i > 0 && i % 1024 == 0 {
+++                println!("  Progress: {:>4}/{} (Unique nodes: {})", i, rows, dag.unique_node_count());
+++            }
+++            let tree = build_dot_product_eml(inputs, &weights[i]);
+++            let mut local_cache = HashMap::new();
+++            add_tree_to_mmap_dag(dag, &tree, &mut local_cache);
+++        }
+++        (rows as u64 * naive_per_row) as u64
+++    };
+++
+++    for proj in ["q", "k", "v", "o"] {
+++        total_naive_count += integrate_matrix(&mut dag, proj, &data.weights[proj], &x_vars);
+++    }
+++
+++    // 3. FFN Audit
+++    println!("Integrating FFN Block (SwiGLU)...");
+++    let w_gate = &data.weights["gate"];
+++    let w_up = &data.weights["up"];
+++    let w_down = &data.weights["down"];
+++    for i in 0..w_gate.len() {
+++        if i > 0 && i % 1024 == 0 {
+++            println!("  FFN Progress: {:>4}/{} (Unique nodes: {})", i, w_gate.len(), dag.unique_node_count());
+++        }
+++        let g = build_dot_product_eml(&x_vars, &w_gate[i]);
+++        let u = build_dot_product_eml(&x_vars, &w_up[i]);
+++        let fused = eml_trs::fusions::swiglu_fused(g, u);
+++        let mut local_cache = HashMap::new();
+++        add_tree_to_mmap_dag(&mut dag, &fused, &mut local_cache);
+++    }
+++    total_naive_count += (w_gate.len() * (36 * hidden - 19) * 2) as u64;
+++
+++    let gate_vars: Vec<Arc<EmlNode>> = (0..w_gate.len()).map(|i| var(&format!("g{}", i))).collect();
+++    total_naive_count += integrate_matrix(&mut dag, "down", w_down, &gate_vars);
+++
+++    println!("\n=== FINAL UNIFIED V3 AUDIT VERDICT ===");
+++    let total_opt = dag.unique_node_count() as u64;
+++    println!("Execution Time:     {:?}", t_audit.elapsed());
+++    println!("Total Naive Nodes:  {:>16}", total_naive_count);
+++    println!("Total Unique Nodes: {:>16}", total_opt);
+++    println!("Sharing Savings:    {:>16} nodes", dag.sharing_savings());
+++    println!("FINAL REDUCTION:    {:>15.2}%", (1.0 - total_opt as f64 / total_naive_count as f64) * 100.0);
+++    println!("SSD Storage used:   {:.2} GB", (total_opt * 24) as f64 / 1e9);
+++}
+++
+++fn mul_safe_stable(a: Arc<EmlNode>, b: Arc<EmlNode>) -> Arc<EmlNode> {
+++    let a_shifted = add_eml(a, konst(4.0));
+++    let product = mul_eml(a_shifted, b.clone());
+++    sub_eml(product, mul_eml(konst(4.0), b))
+++}
+++
+++fn build_simple_sum(terms: &[Arc<EmlNode>]) -> Arc<EmlNode> {
+++    if terms.len() == 1 { return terms[0].clone(); }
+++    let mid = terms.len() / 2;
+++    add_eml(build_simple_sum(&terms[..mid]), build_simple_sum(&terms[mid..]))
+++}
++diff --git a/src/bin/test_mmap_dag.rs b/src/bin/test_mmap_dag.rs
++new file mode 100644
++index 0000000..169f0af
++--- /dev/null
+++++ b/src/bin/test_mmap_dag.rs
++@@ -0,0 +1,64 @@
+++use eml_trs::ast::*;
+++use eml_trs::dag_mmap::*;
+++use std::sync::Arc;
+++use std::collections::HashMap;
+++
+++fn main() {
+++    println!("=== Testing MmapDag V3 ===");
+++    let path = "/vectorlegis_ssd_pool/eml_working/test_dag.bin";
+++    let mut dag = MmapDag::create(path, 1000).expect("Failed to create test dag");
+++
+++    // Test 1: Basic deduplication
+++    println!("Test 1: Basic deduplication...");
+++    let x = var("x");
+++    let mut local1 = HashMap::new();
+++    let id1 = add_tree_to_mmap_dag(&mut dag, &x, &mut local1);
+++    
+++    let mut local2 = HashMap::new();
+++    let id2 = add_tree_to_mmap_dag(&mut dag, &x, &mut local2);
+++    
+++    assert_eq!(id1, id2, "x should have same ID across different local caches");
+++    assert_eq!(dag.unique_node_count(), 1, "Should have exactly 1 node");
+++    println!("  [OK]");
+++
+++    // Test 2: Complex tree deduplication
+++    println!("Test 2: Complex tree deduplication...");
+++    let y = var("y");
+++    let tree1 = eml(x.clone(), y.clone());
+++    let tree2 = eml(x.clone(), y.clone());
+++    
+++    let mut local3 = HashMap::new();
+++    add_tree_to_mmap_dag(&mut dag, &tree1, &mut local3);
+++    
+++    let mut local4 = HashMap::new();
+++    add_tree_to_mmap_dag(&mut dag, &tree2, &mut local4);
+++    
+++    // Unique nodes: x, y, eml(x,y) = 3
+++    assert_eq!(dag.unique_node_count(), 3);
+++    println!("  [OK]");
+++
+++    // Test 3: x_vars cross-row sharing (the "Claude Test")
+++    println!("Test 3: x_vars cross-row sharing...");
+++    let x_vars: Vec<Arc<EmlNode>> = (0..10).map(|i| var(&format!("x{}", i))).collect();
+++    
+++    // Row 1
+++    {
+++        let mut local = HashMap::new();
+++        for x_i in &x_vars {
+++            add_tree_to_mmap_dag(&mut dag, x_i, &mut local);
+++        }
+++    }
+++    let count_after_row1 = dag.unique_node_count();
+++    
+++    // Row 2 (identical x_vars)
+++    {
+++        let mut local = HashMap::new();
+++        for x_i in &x_vars {
+++            add_tree_to_mmap_dag(&mut dag, x_i, &mut local);
+++        }
+++    }
+++    assert_eq!(dag.unique_node_count(), count_after_row1, "x_vars should NOT increase node count in Row 2");
+++    println!("  [OK]");
+++
+++    println!("\nALL TESTS PASSED! MmapDag is scientifically sound.");
+++}
++diff --git a/src/dag_mmap.rs b/src/dag_mmap.rs
++new file mode 100644
++index 0000000..16972c7
++--- /dev/null
+++++ b/src/dag_mmap.rs
++@@ -0,0 +1,249 @@
+++use std::collections::HashMap;
+++use std::fs::OpenOptions;
+++use memmap2::MmapMut;
+++use crate::ast::EmlNode;
+++use std::sync::Arc;
+++
+++/// 24-byte node stored on disk via mmap.
+++/// Compact and aligned for efficient access.
+++#[repr(C)]
+++#[derive(Clone, Copy, Debug)]
+++pub struct CompactNode {
+++    pub tag: u8,          // 0=One, 1=Var, 2=Const, 3=Eml
+++    pub _pad: [u8; 3],
+++    pub left: u32,        // Eml: left child index; Var: var_id; Const: const_id
+++    pub right: u32,       // Eml: right child index; else: 0
+++    pub hash: u64,        // structural hash for global deduplication
+++    pub ref_count: u32,   // global sharing counter
+++}
+++
+++/// Out-of-core DAG engine.
+++/// - Nodes: Stored on ZFS SSD via mmap (O(1) access).
+++/// - Hash Index: Stored in RAM (O(1) lookup).
+++pub struct MmapDag {
+++    _file: std::fs::File,
+++    mmap: MmapMut,
+++    capacity: u64,
+++    
+++    // --- RAM State ---
+++    pub node_count: u32,
+++    hash_index: HashMap<u64, u32>,   // hash -> node_id
+++    var_names: Vec<String>,           // var_id -> name
+++    const_values: Vec<f64>,           // const_id -> value
+++}
+++
+++impl MmapDag {
+++    /// Creates or opens a MmapDag.
+++    /// Initial capacity is specified in number of nodes.
+++    pub fn create(path: &str, initial_capacity: u64) -> std::io::Result<Self> {
+++        let file_size = 8 + (initial_capacity * 24); // 8B magic/header + nodes
+++        let file = OpenOptions::new()
+++            .read(true)
+++            .write(true)
+++            .create(true)
+++            .open(path)?;
+++        
+++        file.set_len(file_size)?;
+++        let mmap = unsafe { MmapMut::map_mut(&file)? };
+++        
+++        Ok(MmapDag {
+++            _file: file,
+++            mmap,
+++            capacity: initial_capacity,
+++            node_count: 0,
+++            hash_index: HashMap::with_capacity(initial_capacity as usize / 10), // Heuristic
+++            var_names: Vec::new(),
+++            const_values: Vec::new(),
+++        })
+++    }
+++
+++    /// Gets a node from the mmap by ID.
+++    #[inline(always)]
+++    pub fn get_node(&self, id: u32) -> &CompactNode {
+++        let offset = 8 + (id as usize * 24);
+++        unsafe {
+++            let ptr = self.mmap.as_ptr().add(offset) as *const CompactNode;
+++            &*ptr
+++        }
+++    }
+++
+++    /// Mutably gets a node from the mmap (internal use for ref_count).
+++    #[inline(always)]
+++    fn get_node_mut(&mut self, id: u32) -> &mut CompactNode {
+++        let offset = 8 + (id as usize * 24);
+++        unsafe {
+++            let ptr = self.mmap.as_mut_ptr().add(offset) as *mut CompactNode;
+++            &mut *ptr
+++        }
+++    }
+++
+++    /// Pushes a new node to the storage.
+++    fn push_node(&mut self, node: CompactNode) -> u32 {
+++        if self.node_count as u64 >= self.capacity {
+++            panic!("MmapDag capacity exceeded ({})", self.capacity);
+++        }
+++        let id = self.node_count;
+++        let offset = 8 + (id as usize * 24);
+++        
+++        unsafe {
+++            let ptr = self.mmap.as_mut_ptr().add(offset) as *mut CompactNode;
+++            std::ptr::write(ptr, node);
+++        }
+++        
+++        self.node_count += 1;
+++        id
+++    }
+++
+++    pub fn intern_var(&mut self, name: &str) -> u32 {
+++        // Simple linear search for now, vars are few (e.g. 2048)
+++        if let Some(id) = self.var_names.iter().position(|n| n == name) {
+++            return id as u32;
+++        }
+++        let id = self.var_names.len() as u32;
+++        self.var_names.push(name.to_string());
+++        id
+++    }
+++
+++    pub fn intern_const(&mut self, v: f64) -> u32 {
+++        let bits = v.to_bits();
+++        for (id, &existing) in self.const_values.iter().enumerate() {
+++            if existing.to_bits() == bits {
+++                return id as u32;
+++            }
+++        }
+++        let id = self.const_values.len() as u32;
+++        self.const_values.push(v);
+++        id
+++    }
+++
+++    /// Adds a node to the DAG or returns existing ID.
+++    pub fn add_eml_node(&mut self, left: u32, right: u32, hash: u64) -> u32 {
+++        if let Some(&id) = self.hash_index.get(&hash) {
+++            self.get_node_mut(id).ref_count += 1;
+++            return id;
+++        }
+++        
+++        let node = CompactNode {
+++            tag: 3,
+++            _pad: [0; 3],
+++            left,
+++            right,
+++            hash,
+++            ref_count: 1,
+++        };
+++        
+++        let id = self.push_node(node);
+++        self.hash_index.insert(hash, id);
+++        id
+++    }
+++
+++    /// Special cases for leaf node creation in the DAG
+++    pub fn add_leaf_node(&mut self, tag: u8, val_id: u32, hash: u64) -> u32 {
+++        if let Some(&id) = self.hash_index.get(&hash) {
+++            self.get_node_mut(id).ref_count += 1;
+++            return id;
+++        }
+++        
+++        let node = CompactNode {
+++            tag,
+++            _pad: [0; 3],
+++            left: val_id,
+++            right: 0,
+++            hash,
+++            ref_count: 1,
+++        };
+++        
+++        let id = self.push_node(node);
+++        self.hash_index.insert(hash, id);
+++        id
+++    }
+++
+++    pub fn unique_node_count(&self) -> u32 {
+++        self.node_count
+++    }
+++
+++    pub fn sharing_savings(&self) -> u64 {
+++        let mut savings = 0u64;
+++        for id in 0..self.node_count {
+++            let node = self.get_node(id);
+++            savings += (node.ref_count.saturating_sub(1)) as u64;
+++        }
+++        savings
+++    }
+++}
+++
+++// --- Hashing Helpers (matching the logic in full_layer_unified) ---
+++
+++pub fn hash_one() -> u64 {
+++    use std::collections::hash_map::DefaultHasher;
+++    use std::hash::{Hash, Hasher};
+++    let mut h = DefaultHasher::new();
+++    "one".hash(&mut h);
+++    h.finish()
+++}
+++
+++pub fn hash_var(var_id: u32) -> u64 {
+++    use std::collections::hash_map::DefaultHasher;
+++    use std::hash::{Hash, Hasher};
+++    let mut h = DefaultHasher::new();
+++    "var".hash(&mut h);
+++    var_id.hash(&mut h);
+++    h.finish()
+++}
+++
+++pub fn hash_const(bits: u64) -> u64 {
+++    use std::collections::hash_map::DefaultHasher;
+++    use std::hash::{Hash, Hasher};
+++    let mut h = DefaultHasher::new();
+++    "const".hash(&mut h);
+++    bits.hash(&mut h);
+++    h.finish()
+++}
+++
+++pub fn hash_eml(left: u32, right: u32) -> u64 {
+++    use std::collections::hash_map::DefaultHasher;
+++    use std::hash::{Hash, Hasher};
+++    let mut h = DefaultHasher::new();
+++    left.hash(&mut h);
+++    right.hash(&mut h);
+++    h.finish()
+++}
+++
+++/// Adapter to add an existing Arc<EmlNode> tree to the MmapDag.
+++/// Uses a local cache per-call to handle sharing within the tree efficiently.
+++pub fn add_tree_to_mmap_dag(
+++    dag: &mut MmapDag,
+++    node: &Arc<EmlNode>,
+++    local_cache: &mut HashMap<usize, u32>,
+++) -> u32 {
+++    let ptr = Arc::as_ptr(node) as usize;
+++    if let Some(&id) = local_cache.get(&ptr) {
+++        return id;
+++    }
+++
+++    let id = match node.as_ref() {
+++        EmlNode::One => {
+++            let hash = hash_one();
+++            dag.add_leaf_node(0, 0, hash)
+++        }
+++        EmlNode::Var(name) => {
+++            let var_id = dag.intern_var(name);
+++            let hash = hash_var(var_id);
+++            dag.add_leaf_node(1, var_id, hash)
+++        }
+++        EmlNode::Const(v) => {
+++            let const_id = dag.intern_const(*v);
+++            let hash = hash_const(v.to_bits());
+++            dag.add_leaf_node(2, const_id, hash)
+++        }
+++        EmlNode::Eml(l, r) => {
+++            let l_id = add_tree_to_mmap_dag(dag, l, local_cache);
+++            let r_id = add_tree_to_mmap_dag(dag, r, local_cache);
+++            let hash = hash_eml(l_id, r_id);
+++            dag.add_eml_node(l_id, r_id, hash)
+++        }
+++    };
+++
+++    local_cache.insert(ptr, id);
+++    id
+++}
++diff --git a/src/lib.rs b/src/lib.rs
++index 05f29a9..73dcb1d 100644
++--- a/src/lib.rs
+++++ b/src/lib.rs
++@@ -11,3 +11,4 @@ pub mod polar;
++ pub mod nn_layer;
++ pub mod tslp;
++ pub mod compress;
+++pub mod dag_mmap;
+diff --git a/task.md b/task.md
+index 1364ab1..abbc15a 100644
+--- a/task.md
++++ b/task.md
+@@ -13,3 +13,9 @@
+     - [ ] Test jednostkowy `MmapDag`
+     - [ ] TEST KLUCZOWY: `test_no_duplicate_xvars` (cross-row sharing)
+     - [ ] Uruchomienie pełnego audytu V3
++- [ ] Krok 6: EMLM Parity Verification (`src/bin/emlm_parity.rs`)
++    - [ ] Implementacja `execute_with_reference`
++    - [ ] Test na pojedynczym wierszu (max_diff < 1e-3)
++- [ ] Krok 7: EmlmWriter & EmlmReader
++    - [ ] Format binarny (Template + Weights f16)
++    - [ ] Kompilacja Layer 0 do `.emlm`

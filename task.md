@@ -13,3 +13,9 @@
     - [ ] Test jednostkowy `MmapDag`
     - [ ] TEST KLUCZOWY: `test_no_duplicate_xvars` (cross-row sharing)
     - [ ] Uruchomienie pełnego audytu V3
+- [ ] Krok 6: EMLM Parity Verification (`src/bin/emlm_parity.rs`)
+    - [ ] Implementacja `execute_with_reference`
+    - [ ] Test na pojedynczym wierszu (max_diff < 1e-3)
+- [ ] Krok 7: EmlmWriter & EmlmReader
+    - [ ] Format binarny (Template + Weights f16)
+    - [ ] Kompilacja Layer 0 do `.emlm`

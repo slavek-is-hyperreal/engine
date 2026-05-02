@@ -1,0 +1,6 @@
+=== EML 1:1 UNIFIED GLOBAL DAG AUDIT & PARITY V4 ===
+Strategy: Mmap-backed Global DAG + Row-by-Row Parity Verification.
+MmapDag initialized at /vectorlegis_ssd_pool/eml_working/global_dag_v4.bin.
+Loaded weights in 9.700691493s
+
+Auditing & Verifying RMSNorms...

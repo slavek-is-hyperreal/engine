@@ -52,8 +52,33 @@ Implement a high-performance, memory-efficient DAG engine that uses `mmap` for n
 3. **Cross-row Deduplication Test**:
    - Verify that shared `x_vars` (same `Arc` pointers used in different trees/rows) are correctly identified as the same node in the global DAG despite having separate local caches.
 
-### Manual Verification
-- Run `cargo run --bin full_layer_unified_v3 --release`.
-- Monitor RAM usage (should stay around 1.5-2.0 GB).
-- Monitor Disk IO (ZFS should show compression benefits).
 - Verify the final `sharing_savings()` metric for the global model.
+
+---
+
+# Phase 4: EMLM (EML Model Format)
+
+## Problem: Space Efficiency
+A naive EML dump (FlatProgram per row) is 10x larger than GGUF. EMLM solves this by separating **Structure (Template)** from **Weights**.
+
+## EMLM Specification (v1.0)
+- **Header**: Metadata (layers, dims, heads).
+- **Templates**: One `FlatProgram` per operation type (e.g., Q-proj). Instead of `Const(f32)`, ops use `weight_idx (u16)`.
+- **Weight Tensors**: Raw f16 row-major blocks.
+- **Execution**: `y[row] = template.execute(input, weights[row])`.
+
+## Priority Roadmap
+
+### Day 1: emlm_parity.rs (The "Hard" Test)
+- Build a binary that takes a row, builds the EML tree, compiles to `FlatProgram`, executes it, and compares the result vs. standard MatMul.
+- Goal: `max_diff < 1e-3`.
+
+### Day 2-5: EMLM Implementation
+- **EmlmWriter**: First version: Naive (JSON/Binary per row). Second version: Optimized (Template + f16 weights).
+- **EmlmReader**: Fast loader with mmap support for weights.
+
+### Day 6+: Full Model Compilation
+- Compile all 22 layers of TinyLlama-1.1B into a single `.emlm` file (~1.85 GB).
+
+## Scientific Impact for PAPER.md
+> "Empirical audit of TinyLlama-1.1B Layer 0 (51M parameters) shows 35.54% node reduction (row-by-row) and XX% unified structural reduction. Parity tests confirm max_diff < 1e-3 across all tested rows."
